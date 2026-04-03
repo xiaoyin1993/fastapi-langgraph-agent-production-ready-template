@@ -38,55 +38,20 @@ class LLMRegistry:
     并支持覆盖默认参数。
     """
 
+    # 公共连接参数
+    _base_url = settings.OPENAI_API_BASE or None
+    _api_key = settings.OPENAI_API_KEY
+
     # 类级别变量，包含所有可用的 LLM 模型
     LLMS: List[Dict[str, Any]] = [
         {
-            "name": "gpt-5-mini",
+            "name": settings.DEFAULT_LLM_MODEL,
             "llm": ChatOpenAI(
-                model="gpt-5-mini",
-                api_key=settings.OPENAI_API_KEY,
-                max_tokens=settings.MAX_TOKENS,
-                reasoning={"effort": "low"},
-            ),
-        },
-        {
-            "name": "gpt-5",
-            "llm": ChatOpenAI(
-                model="gpt-5",
-                api_key=settings.OPENAI_API_KEY,
-                max_tokens=settings.MAX_TOKENS,
-                reasoning={"effort": "medium"},
-            ),
-        },
-        {
-            "name": "gpt-5-nano",
-            "llm": ChatOpenAI(
-                model="gpt-5-nano",
-                api_key=settings.OPENAI_API_KEY,
-                max_tokens=settings.MAX_TOKENS,
-                reasoning={"effort": "minimal"},
-            ),
-        },
-        {
-            "name": "gpt-4o",
-            "llm": ChatOpenAI(
-                model="gpt-4o",
+                model=settings.DEFAULT_LLM_MODEL,
+                api_key=_api_key,
+                base_url=_base_url,
                 temperature=settings.DEFAULT_LLM_TEMPERATURE,
-                api_key=settings.OPENAI_API_KEY,
                 max_tokens=settings.MAX_TOKENS,
-                top_p=0.95 if settings.ENVIRONMENT == Environment.PRODUCTION else 0.8,
-                presence_penalty=0.1 if settings.ENVIRONMENT == Environment.PRODUCTION else 0.0,
-                frequency_penalty=0.1 if settings.ENVIRONMENT == Environment.PRODUCTION else 0.0,
-            ),
-        },
-        {
-            "name": "gpt-4o-mini",
-            "llm": ChatOpenAI(
-                model="gpt-4o-mini",
-                temperature=settings.DEFAULT_LLM_TEMPERATURE,
-                api_key=settings.OPENAI_API_KEY,
-                max_tokens=settings.MAX_TOKENS,
-                top_p=0.9 if settings.ENVIRONMENT == Environment.PRODUCTION else 0.8,
             ),
         },
     ]
@@ -121,7 +86,8 @@ class LLMRegistry:
         # 如果用户传入了自定义参数，就用这些参数创建一个新实例
         if kwargs:
             logger.debug("creating_llm_with_custom_args", model_name=model_name, custom_args=list(kwargs.keys()))
-            return ChatOpenAI(model=model_name, api_key=settings.OPENAI_API_KEY, **kwargs)
+            base_url = kwargs.pop("base_url", cls._base_url)
+            return ChatOpenAI(model=model_name, api_key=cls._api_key, base_url=base_url, **kwargs)
 
         # 返回默认实例
         logger.debug("using_default_llm_instance", model_name=model_name)

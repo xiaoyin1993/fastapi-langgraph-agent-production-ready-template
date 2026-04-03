@@ -21,6 +21,7 @@ from app.infrastructure.limiter import limiter
 from app.infrastructure.logging import logger
 from app.infrastructure.metrics import llm_stream_duration_seconds
 from app.models.session import Session
+from app.services.database import DatabaseService
 from app.schemas.chat import (
     ChatRequest,
     ChatResponse,
@@ -30,6 +31,7 @@ from app.schemas.chat import (
 
 router = APIRouter()
 agent = LangGraphAgent()
+db_service = DatabaseService()
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -59,7 +61,9 @@ async def chat(
             message_count=len(chat_request.messages),
         )
 
-        result = await agent.get_response(chat_request.messages, session.id, user_id=session.user_id)
+        user = await db_service.get_user(session.user_id)
+        username = user.email if user else None
+        result = await agent.get_response(chat_request.messages, session.id, user_id=session.user_id, username=username)
 
         logger.info("chat_request_processed", session_id=session.id)
 
@@ -96,6 +100,9 @@ async def chat_stream(
             message_count=len(chat_request.messages),
         )
 
+        user = await db_service.get_user(session.user_id)
+        username = user.email if user else None
+
         async def event_generator():
             """生成流式事件。
 
@@ -109,7 +116,7 @@ async def chat_stream(
                 full_response = ""
                 with llm_stream_duration_seconds.labels(model=agent.llm_service.get_llm().get_name()).time():
                     async for chunk in agent.get_stream_response(
-                        chat_request.messages, session.id, user_id=session.user_id
+                        chat_request.messages, session.id, user_id=session.user_id, username=username
                     ):
                         full_response += chunk
                         response = StreamResponse(content=chunk, done=False)

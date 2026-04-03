@@ -1,6 +1,7 @@
 """本文件包含 LangGraph 智能体/工作流以及与大语言模型的交互逻辑。"""
 
 import asyncio
+import json
 from typing import (
     AsyncGenerator,
     Optional,
@@ -13,6 +14,7 @@ from langchain_core.messages import (
     ToolMessage,
     convert_to_openai_messages,
 )
+from langfuse import propagate_attributes
 from langfuse.langchain import CallbackHandler
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import (
@@ -37,12 +39,12 @@ from app.infrastructure.config import (
 from app.core.tools import tools
 from app.infrastructure.logging import logger
 from app.infrastructure.metrics import llm_inference_duration_seconds
-from app.core.prompts import load_system_prompt
+from app.core.prompts import load_intent_prompt, load_router_prompt, load_system_prompt
 from app.schemas import (
     GraphState,
     Message,
 )
-from app.services.llm import llm_service
+from app.services.llm import LLMRegistry, llm_service
 from app.utils import (
     dump_messages,
     prepare_messages,
@@ -72,6 +74,14 @@ class LangGraphAgent:
             environment=settings.ENVIRONMENT.value,
         )
 
+    @staticmethod
+    def _build_mem0_provider_config(model: str) -> dict:
+        """构建 mem0ai 的 provider 配置。"""
+        config = {"provider": settings.LLM_PROVIDER, "config": {"model": model}}
+        if settings.LLM_PROVIDER == "ollama":
+            config["config"]["ollama_base_url"] = settings.OLLAMA_BASE_URL
+        return config
+
     async def _long_term_memory(self) -> AsyncMemory:
         """初始化长期记忆。"""
         if self.memory is None:
@@ -81,6 +91,7 @@ class LangGraphAgent:
                         "provider": "pgvector",
                         "config": {
                             "collection_name": settings.LONG_TERM_MEMORY_COLLECTION_NAME,
+                            "embedding_model_dims": settings.LONG_TERM_MEMORY_EMBEDDING_DIMS,
                             "dbname": settings.POSTGRES_DB,
                             "user": settings.POSTGRES_USER,
                             "password": settings.POSTGRES_PASSWORD,
@@ -88,12 +99,8 @@ class LangGraphAgent:
                             "port": settings.POSTGRES_PORT,
                         },
                     },
-                    "llm": {
-                        "provider": "openai",
-                        "config": {"model": settings.LONG_TERM_MEMORY_MODEL},
-                    },
-                    "embedder": {"provider": "openai", "config": {"model": settings.LONG_TERM_MEMORY_EMBEDDER_MODEL}},
-                    # "custom_fact_extraction_prompt": load_custom_fact_extraction_prompt(),
+                    "llm": self._build_mem0_provider_config(settings.LONG_TERM_MEMORY_MODEL),
+                    "embedder": self._build_mem0_provider_config(settings.LONG_TERM_MEMORY_EMBEDDER_MODEL),
                 }
             )
         return self.memory
@@ -174,61 +181,6 @@ class LangGraphAgent:
                 error=str(e),
             )
 
-    async def _chat(self, state: GraphState, config: RunnableConfig) -> Command:
-        """处理聊天状态并生成回复。
-
-        Args:
-            state (GraphState): 当前对话的状态。
-            config (RunnableConfig): LangGraph 运行时配置。
-
-        Returns:
-            Command: 包含更新后状态和下一个要执行节点的 Command 对象。
-        """
-        # 获取当前的大语言模型实例，用于指标统计
-        current_llm = self.llm_service.get_llm()
-        model_name = (
-            current_llm.model_name
-            if current_llm and hasattr(current_llm, "model_name")
-            else settings.DEFAULT_LLM_MODEL
-        )
-
-        SYSTEM_PROMPT = load_system_prompt(long_term_memory=state.long_term_memory)
-
-        # 用系统提示词准备消息
-        messages = prepare_messages(state.messages, current_llm, SYSTEM_PROMPT)
-
-        try:
-            # 使用大语言模型服务，支持自动重试和循环降级
-            with llm_inference_duration_seconds.labels(model=model_name).time():
-                response_message = await self.llm_service.call(dump_messages(messages))
-
-            # 处理响应，处理结构化内容块
-            response_message = process_llm_response(response_message)
-
-            logger.info(
-                "llm_response_generated",
-                session_id=config["configurable"]["thread_id"],
-                model=model_name,
-                environment=settings.ENVIRONMENT.value,
-            )
-
-            # 根据是否有工具调用来决定下一个节点
-            if response_message.tool_calls:
-                goto = "tool_call"
-            else:
-                goto = END
-
-            return Command(update={"messages": [response_message]}, goto=goto)
-        except Exception as e:
-            logger.error(
-                "llm_call_failed_all_models",
-                session_id=config["configurable"]["thread_id"],
-                error=str(e),
-                environment=settings.ENVIRONMENT.value,
-            )
-            raise Exception(f"failed to get llm response after trying all models: {str(e)}")
-
-    # 定义工具调用节点
     async def _tool_call(self, state: GraphState) -> Command:
         """处理最后一条消息中的工具调用。
 
@@ -236,7 +188,7 @@ class LangGraphAgent:
             state: 包含消息和工具调用的当前智能体状态。
 
         Returns:
-            Command: 包含更新后消息并路由回聊天节点的 Command 对象。
+            Command: 包含更新后消息并路由回对应意图节点的 Command 对象。
         """
         outputs = []
         for tool_call in state.messages[-1].tool_calls:
@@ -248,7 +200,170 @@ class LangGraphAgent:
                     tool_call_id=tool_call["id"],
                 )
             )
-        return Command(update={"messages": outputs}, goto="chat")
+        # 根据意图路由回对应的处理节点
+        intent_to_node = {
+            "qa": "qa_node",
+            "tool": "tool_node",
+            "data_analysis": "data_node",
+        }
+        goto = intent_to_node.get(state.intent, "tool_node")
+        return Command(update={"messages": outputs}, goto=goto)
+
+    async def _router(self, state: GraphState) -> Command:
+        """意图分类节点：使用轻量 LLM 判断用户意图。
+
+        Args:
+            state: 当前对话状态。
+
+        Returns:
+            Command: 包含 intent 和 intent_confidence 的状态更新。
+        """
+        # 提取最新的用户消息
+        user_message = ""
+        for msg in reversed(state.messages):
+            if hasattr(msg, "type") and msg.type == "human":
+                user_message = msg.content
+                break
+            elif hasattr(msg, "role") and msg.role == "user":
+                user_message = msg.content
+                break
+
+        if not user_message:
+            return Command(
+                update={"intent": "chat", "intent_confidence": 0.5},
+                goto="chat_node",
+            )
+
+        # 使用默认模型做意图分类
+        router_prompt = load_router_prompt(user_message=user_message)
+        router_llm = LLMRegistry.get(settings.DEFAULT_LLM_MODEL)
+
+        try:
+            response = await router_llm.ainvoke([{"role": "user", "content": router_prompt}])
+            content = response.content.strip()
+
+            # 清理可能的 markdown 代码块包裹
+            if content.startswith("```"):
+                content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+            result = json.loads(content)
+            intent = result.get("intent", "qa")
+            confidence = result.get("confidence", 0.5)
+
+            # 验证 intent 是否合法
+            valid_intents = {"chat", "qa", "task", "tool", "data_analysis"}
+            if intent not in valid_intents:
+                intent = "qa"
+                confidence = 0.3
+
+            logger.info(
+                "intent_classified",
+                intent=intent,
+                confidence=confidence,
+                user_message=user_message[:50],
+            )
+        except Exception as e:
+            logger.exception("intent_classification_failed", error=str(e))
+            intent = "qa"
+            confidence = 0.0
+
+        # 意图到节点的映射
+        intent_to_node = {
+            "chat": "chat_node",
+            "qa": "qa_node",
+            "task": "task_node",
+            "tool": "tool_node",
+            "data_analysis": "data_node",
+        }
+        goto = intent_to_node.get(intent, "qa_node")
+
+        return Command(
+            update={"intent": intent, "intent_confidence": confidence},
+            goto=goto,
+        )
+
+    async def _chat_node(self, state: GraphState, config: RunnableConfig) -> Command:
+        """闲聊节点：轻松友好地回复，不调用工具。"""
+        prompt = load_intent_prompt("chat", long_term_memory=state.long_term_memory)
+        return await self._llm_respond(state, config, prompt)
+
+    async def _qa_node(self, state: GraphState, config: RunnableConfig) -> Command:
+        """知识问答节点：准确严谨地回答，可能调用搜索工具。"""
+        prompt = load_intent_prompt("qa", long_term_memory=state.long_term_memory)
+        return await self._llm_respond(state, config, prompt, allow_tools=True)
+
+    async def _task_node(self, state: GraphState, config: RunnableConfig) -> Command:
+        """任务执行节点：专业高效地完成创作任务。"""
+        prompt = load_intent_prompt("task", long_term_memory=state.long_term_memory)
+        return await self._llm_respond(state, config, prompt)
+
+    async def _tool_node(self, state: GraphState, config: RunnableConfig) -> Command:
+        """工具编排节点：调用外部工具获取信息。"""
+        prompt = load_system_prompt(long_term_memory=state.long_term_memory)
+        return await self._llm_respond(state, config, prompt, allow_tools=True)
+
+    async def _data_node(self, state: GraphState, config: RunnableConfig) -> Command:
+        """数据分析节点：查询数据并生成分析结果。"""
+        prompt = load_intent_prompt("data_analysis", long_term_memory=state.long_term_memory)
+        return await self._llm_respond(state, config, prompt, allow_tools=True)
+
+    async def _llm_respond(
+        self,
+        state: GraphState,
+        config: RunnableConfig,
+        system_prompt: str,
+        allow_tools: bool = False,
+    ) -> Command:
+        """通用 LLM 响应方法，供各节点复用。
+
+        Args:
+            state: 当前对话状态。
+            config: LangGraph 运行时配置。
+            system_prompt: 该节点使用的系统提示词。
+            allow_tools: 是否允许工具调用。
+
+        Returns:
+            Command: 包含 LLM 响应的 Command 对象。
+        """
+        current_llm = self.llm_service.get_llm()
+        model_name = (
+            current_llm.model_name
+            if current_llm and hasattr(current_llm, "model_name")
+            else settings.DEFAULT_LLM_MODEL
+        )
+
+        messages = prepare_messages(state.messages, current_llm, system_prompt)
+
+        try:
+            with llm_inference_duration_seconds.labels(model=model_name).time():
+                response_message = await self.llm_service.call(messages)
+
+            response_message = process_llm_response(response_message)
+
+            logger.info(
+                "llm_response_generated",
+                intent=state.intent,
+                session_id=config["configurable"]["thread_id"],
+                model=model_name,
+                environment=settings.ENVIRONMENT.value,
+            )
+
+            # 根据是否允许工具调用和是否有工具调用来决定下一步
+            if allow_tools and response_message.tool_calls:
+                goto = "tool_call"
+            else:
+                goto = END
+
+            return Command(update={"messages": [response_message]}, goto=goto)
+        except Exception as e:
+            logger.error(
+                "llm_call_failed_all_models",
+                intent=state.intent,
+                session_id=config["configurable"]["thread_id"],
+                error=str(e),
+                environment=settings.ENVIRONMENT.value,
+            )
+            raise Exception(f"failed to get llm response after trying all models: {str(e)}")
 
     async def create_graph(self) -> Optional[CompiledStateGraph]:
         """创建并配置 LangGraph 工作流。
@@ -259,10 +374,43 @@ class LangGraphAgent:
         if self._graph is None:
             try:
                 graph_builder = StateGraph(GraphState)
-                graph_builder.add_node("chat", self._chat, ends=["tool_call", END])
-                graph_builder.add_node("tool_call", self._tool_call, ends=["chat"])
-                graph_builder.set_entry_point("chat")
-                graph_builder.set_finish_point("chat")
+
+                # 意图路由节点
+                graph_builder.add_node(
+                    "router", self._router,
+                    destinations=("chat_node", "qa_node", "task_node", "tool_node", "data_node"),
+                )
+
+                # 各意图处理节点
+                graph_builder.add_node(
+                    "chat_node", self._chat_node,
+                    destinations=(END,),
+                )
+                graph_builder.add_node(
+                    "qa_node", self._qa_node,
+                    destinations=("tool_call", END),
+                )
+                graph_builder.add_node(
+                    "task_node", self._task_node,
+                    destinations=(END,),
+                )
+                graph_builder.add_node(
+                    "tool_node", self._tool_node,
+                    destinations=("tool_call", END),
+                )
+                graph_builder.add_node(
+                    "data_node", self._data_node,
+                    destinations=("tool_call", END),
+                )
+
+                # 工具执行节点
+                graph_builder.add_node(
+                    "tool_call", self._tool_call,
+                    destinations=("qa_node", "tool_node", "data_node"),
+                )
+
+                # 入口点：所有请求先经过 router
+                graph_builder.set_entry_point("router")
 
                 # 获取连接池（生产环境下如果数据库不可用可能返回 None）
                 connection_pool = await self._get_connection_pool()
@@ -300,6 +448,7 @@ class LangGraphAgent:
         messages: list[Message],
         session_id: str,
         user_id: Optional[str] = None,
+        username: Optional[str] = None,
     ) -> list[dict]:
         """从大语言模型获取回复。
 
@@ -323,14 +472,17 @@ class LangGraphAgent:
                 "debug": settings.DEBUG,
             },
         }
+
         relevant_memory = (
             await self._get_relevant_memory(user_id, messages[-1].content)
         ) or "No relevant memory found."
+
         try:
-            response = await self._graph.ainvoke(
-                input={"messages": dump_messages(messages), "long_term_memory": relevant_memory},
-                config=config,
-            )
+            with propagate_attributes(session_id=session_id, user_id=username or str(user_id)):
+                response = await self._graph.ainvoke(
+                    input={"messages": dump_messages(messages), "long_term_memory": relevant_memory},
+                    config=config,
+                )
             # 在后台异步更新记忆，不阻塞响应
             asyncio.create_task(
                 self._update_long_term_memory(
@@ -342,7 +494,7 @@ class LangGraphAgent:
             logger.error(f"Error getting response: {str(e)}")
 
     async def get_stream_response(
-        self, messages: list[Message], session_id: str, user_id: Optional[str] = None
+        self, messages: list[Message], session_id: str, user_id: Optional[str] = None, username: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
         """从大语言模型获取流式回复。
 
@@ -356,11 +508,7 @@ class LangGraphAgent:
         """
         config = {
             "configurable": {"thread_id": session_id},
-            "callbacks": [
-                CallbackHandler(
-                    environment=settings.ENVIRONMENT.value, debug=False, user_id=user_id, session_id=session_id
-                )
-            ],
+            "callbacks": [CallbackHandler()],
             "metadata": {
                 "user_id": user_id,
                 "session_id": session_id,
@@ -376,17 +524,21 @@ class LangGraphAgent:
         ) or "No relevant memory found."
 
         try:
-            async for token, _ in self._graph.astream(
-                {"messages": dump_messages(messages), "long_term_memory": relevant_memory},
-                config,
-                stream_mode="messages",
-            ):
-                try:
-                    yield token.content
-                except Exception as token_error:
-                    logger.error("Error processing token", error=str(token_error), session_id=session_id)
-                    # 即使当前 token 处理失败，也继续处理下一个
-                    continue
+            with propagate_attributes(session_id=session_id, user_id=username or str(user_id)):
+                async for event in self._graph.astream_events(
+                    {"messages": dump_messages(messages), "long_term_memory": relevant_memory},
+                    config,
+                    version="v2",
+                ):
+                    kind = event.get("event", "")
+                    if kind == "on_chat_model_stream":
+                        # 过滤 router 节点的输出（意图分类 JSON 不发给用户）
+                        node_name = event.get("metadata", {}).get("langgraph_node", "")
+                        if node_name == "router":
+                            continue
+                        chunk = event.get("data", {}).get("chunk")
+                        if chunk and hasattr(chunk, "content") and chunk.content:
+                            yield chunk.content
 
             # 流式传输完成后，获取最终状态并在后台更新记忆
             state: StateSnapshot = await sync_to_async(self._graph.get_state)(config=config)

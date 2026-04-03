@@ -88,17 +88,12 @@ def prepare_messages(messages: list[Message], llm: BaseChatModel, system_prompt:
             include_system=False,
             allow_partial=False,
         )
-    except ValueError as e:
-        # 处理无法识别的内容块（比如 GPT-5 的推理块）
-        if "Unrecognized content block type" in str(e):
-            logger.warning(
-                "token_counting_failed_skipping_trim",
-                error=str(e),
-                message_count=len(messages),
-            )
-            # 跳过裁剪，直接返回所有消息
-            trimmed_messages = messages
-        else:
-            raise
+    except (ValueError, NotImplementedError) as e:
+        logger.warning(
+            "token_counting_failed_skipping_trim",
+            error=str(e),
+            message_count=len(messages),
+        )
+        trimmed_messages = dump_messages(messages)
 
-    return [Message(role="system", content=system_prompt)] + trimmed_messages
+    return [{"role": "system", "content": system_prompt}] + trimmed_messages

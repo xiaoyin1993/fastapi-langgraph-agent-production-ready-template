@@ -38,6 +38,9 @@ dependencies = [
     "tenacity>=9.1.2",
     "mem0ai>=1.0.0",
     "uvloop>=0.22.1",
+    "matplotlib>=3.9.0",
+    "numpy>=2.0.0",
+    "ollama>=0.6.1",
 ]
 
 [project.optional-dependencies]

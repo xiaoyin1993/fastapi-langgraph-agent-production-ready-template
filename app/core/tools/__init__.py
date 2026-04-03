@@ -6,6 +6,8 @@
 
 from langchain_core.tools.base import BaseTool
 
+from .chart_generator import chart_generator_tool
 from .duckduckgo_search import duckduckgo_search_tool
+from .sql_query import sql_query_tool
 
-tools: list[BaseTool] = [duckduckgo_search_tool]
+tools: list[BaseTool] = [duckduckgo_search_tool, sql_query_tool, chart_generator_tool]
