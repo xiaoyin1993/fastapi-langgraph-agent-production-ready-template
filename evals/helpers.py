@@ -1,4 +1,4 @@
-"""Helper functions for the evaluation process."""
+"""评估流程的辅助函数。"""
 
 import json
 import os
@@ -14,18 +14,18 @@ from typing import (
 
 from langfuse.api.resources.commons.types.trace_with_details import TraceWithDetails
 
-from app.core.logging import logger
+from app.infrastructure.logging import logger
 from evals.schemas import ScoreSchema
 
 
 def format_messages(messages: list[dict]) -> str:
-    """Format a list of messages for evaluation.
+    """把消息列表格式化为可用于评估的字符串。
 
     Args:
-        messages: List of message dictionaries.
+        messages: 消息字典列表。
 
     Returns:
-        String representation of formatted messages.
+        格式化后的消息字符串。
     """
     formatted_messages = []
     for idx, message in enumerate(messages):
@@ -47,13 +47,13 @@ def format_messages(messages: list[dict]) -> str:
 
 
 def get_input_output(trace: TraceWithDetails) -> Tuple[Optional[str], Optional[str]]:
-    """Extract and format input and output messages from a trace.
+    """从 trace 中提取并格式化输入和输出消息。
 
     Args:
-        trace: The trace to extract messages from.
+        trace: 要提取消息的 trace。
 
     Returns:
-        Tuple of (formatted_input, formatted_output). None if output is not a dict.
+        (格式化的输入, 格式化的输出) 元组。如果输出不是字典则返回 None。
     """
     if not isinstance(trace.output, dict):
         return None, None
@@ -63,13 +63,13 @@ def get_input_output(trace: TraceWithDetails) -> Tuple[Optional[str], Optional[s
 
 
 def initialize_report(model_name: str) -> Dict[str, Any]:
-    """Initialize report data structure.
+    """初始化报告数据结构。
 
     Args:
-        model_name: Name of the model being evaluated.
+        model_name: 被评估的模型名称。
 
     Returns:
-        Dict containing initialized report structure.
+        包含初始化报告结构的字典。
     """
     return {
         "timestamp": datetime.now().isoformat(),
@@ -85,11 +85,11 @@ def initialize_report(model_name: str) -> Dict[str, Any]:
 
 
 def initialize_metrics_summary(report: Dict[str, Any], metrics: List[Dict[str, str]]) -> None:
-    """Initialize metrics summary in the report.
+    """初始化报告中的指标摘要。
 
     Args:
-        report: The report dictionary.
-        metrics: List of metric definitions.
+        report: 报告字典。
+        metrics: 指标定义列表。
     """
     for metric in metrics:
         report["metrics_summary"][metric["name"]] = {"success_count": 0, "failure_count": 0, "avg_score": 0.0}
@@ -98,14 +98,14 @@ def initialize_metrics_summary(report: Dict[str, Any], metrics: List[Dict[str, s
 def update_success_metrics(
     report: Dict[str, Any], trace_id: str, metric_name: str, score: ScoreSchema, trace_results: Dict[str, Any]
 ) -> None:
-    """Update metrics for a successful evaluation.
+    """更新评估成功时的指标数据。
 
     Args:
-        report: The report dictionary.
-        trace_id: ID of the trace being evaluated.
-        metric_name: Name of the metric.
-        score: The score object.
-        trace_results: Dictionary to store trace results.
+        report: 报告字典。
+        trace_id: 被评估的 trace ID。
+        metric_name: 指标名称。
+        score: 评分对象。
+        trace_results: 存储 trace 结果的字典。
     """
     trace_results[trace_id]["metrics_succeeded"] += 1
     trace_results[trace_id]["metrics_results"][metric_name] = {
@@ -120,13 +120,13 @@ def update_success_metrics(
 def update_failure_metrics(
     report: Dict[str, Any], trace_id: str, metric_name: str, trace_results: Dict[str, Any]
 ) -> None:
-    """Update metrics for a failed evaluation.
+    """更新评估失败时的指标数据。
 
     Args:
-        report: The report dictionary.
-        trace_id: ID of the trace being evaluated.
-        metric_name: Name of the metric.
-        trace_results: Dictionary to store trace results.
+        report: 报告字典。
+        trace_id: 被评估的 trace ID。
+        metric_name: 指标名称。
+        trace_results: 存储 trace 结果的字典。
     """
     trace_results[trace_id]["metrics_results"][metric_name] = {"success": False}
     report["metrics_summary"][metric_name]["failure_count"] += 1
@@ -135,13 +135,13 @@ def update_failure_metrics(
 def process_trace_results(
     report: Dict[str, Any], trace_id: str, trace_results: Dict[str, Any], metrics_count: int
 ) -> None:
-    """Process results for a single trace.
+    """处理单条 trace 的评估结果。
 
     Args:
-        report: The report dictionary.
-        trace_id: ID of the trace being evaluated.
-        trace_results: Dictionary to store trace results.
-        metrics_count: Total number of metrics.
+        report: 报告字典。
+        trace_id: 被评估的 trace ID。
+        trace_results: 存储 trace 结果的字典。
+        metrics_count: 指标总数。
     """
     if trace_results[trace_id]["metrics_succeeded"] == metrics_count:
         trace_results[trace_id]["success"] = True
@@ -162,10 +162,10 @@ def process_trace_results(
 
 
 def calculate_avg_scores(report: Dict[str, Any]) -> None:
-    """Calculate average scores for each metric.
+    """计算每个指标的平均分。
 
     Args:
-        report: The report dictionary.
+        report: 报告字典。
     """
     for _, data in report["metrics_summary"].items():
         if data["success_count"] > 0:
@@ -173,13 +173,13 @@ def calculate_avg_scores(report: Dict[str, Any]) -> None:
 
 
 def generate_report(report: Dict[str, Any]) -> str:
-    """Generate a JSON report file with evaluation results.
+    """生成包含评估结果的 JSON 报告文件。
 
     Args:
-        report: The report dictionary.
+        report: 报告字典。
 
     Returns:
-        str: Path to the generated report file.
+        str: 生成的报告文件路径。
     """
     report_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
     os.makedirs(report_dir, exist_ok=True)
@@ -190,7 +190,7 @@ def generate_report(report: Dict[str, Any]) -> str:
     with open(report_path, "w") as f:
         json.dump(report, f, indent=2)
 
-    # Add the report path to the report data for reference
+    # 将报告路径添加到报告数据中以便后续引用
     report["generate_report_path"] = report_path
 
     logger.info("Evaluation report generated", report_path=report_path)

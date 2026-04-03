@@ -1,4 +1,4 @@
-"""This file contains the main application entry point."""
+"""这个文件是应用程序的主入口。"""
 
 import os
 from contextlib import asynccontextmanager
@@ -22,20 +22,20 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.api.v1.api import api_router
-from app.core.config import settings
-from app.core.limiter import limiter
-from app.core.logging import logger
-from app.core.metrics import setup_metrics
-from app.core.middleware import (
+from app.infrastructure.config import settings
+from app.infrastructure.limiter import limiter
+from app.infrastructure.logging import logger
+from app.infrastructure.metrics import setup_metrics
+from app.infrastructure.middleware import (
     LoggingContextMiddleware,
     MetricsMiddleware,
 )
 from app.services.database import database_service
 
-# Load environment variables
+# 加载环境变量
 load_dotenv()
 
-# Initialize Langfuse
+# 初始化 Langfuse
 langfuse = Langfuse(
     public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
     secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
@@ -45,7 +45,7 @@ langfuse = Langfuse(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Handle application startup and shutdown events."""
+    """处理应用启动和关闭事件。"""
     logger.info(
         "application_startup",
         project_name=settings.PROJECT_NAME,
@@ -64,33 +64,33 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Set up Prometheus metrics
+# 配置 Prometheus 监控指标
 setup_metrics(app)
 
-# Add logging context middleware (must be added before other middleware to capture context)
+# 添加日志上下文中间件（必须在其他中间件之前添加，以便捕获上下文）
 app.add_middleware(LoggingContextMiddleware)
 
-# Add custom metrics middleware
+# 添加自定义指标中间件
 app.add_middleware(MetricsMiddleware)
 
-# Set up rate limiter exception handler
+# 配置限流器异常处理
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
-# Add validation exception handler
+# 添加请求验证异常处理
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handle validation errors from request data.
+    """处理请求数据的验证错误。
 
     Args:
-        request: The request that caused the validation error
-        exc: The validation error
+        request: 触发验证错误的请求
+        exc: 验证错误信息
 
     Returns:
-        JSONResponse: A formatted error response
+        JSONResponse: 格式化后的错误响应
     """
-    # Log the validation error
+    # 记录验证错误日志
     logger.error(
         "validation_error",
         client_host=request.client.host if request.client else "unknown",
@@ -98,7 +98,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         errors=str(exc.errors()),
     )
 
-    # Format the errors to be more user-friendly
+    # 将错误信息格式化为更友好的形式
     formatted_errors = []
     for error in exc.errors():
         loc = " -> ".join([str(loc_part) for loc_part in error["loc"] if loc_part != "body"])
@@ -110,7 +110,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
-# Set up CORS middleware
+# 配置 CORS 跨域中间件
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -119,14 +119,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API router
+# 注册 API 路由
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
 @app.get("/")
 @limiter.limit(settings.RATE_LIMIT_ENDPOINTS["root"][0])
 async def root(request: Request):
-    """Root endpoint returning basic API information."""
+    """根路径端点，返回 API 的基本信息。"""
     logger.info("root_endpoint_called")
     return {
         "name": settings.PROJECT_NAME,
@@ -141,14 +141,14 @@ async def root(request: Request):
 @app.get("/health")
 @limiter.limit(settings.RATE_LIMIT_ENDPOINTS["health"][0])
 async def health_check(request: Request) -> Dict[str, Any]:
-    """Health check endpoint with environment-specific information.
+    """健康检查端点，返回与当前环境相关的信息。
 
     Returns:
-        Dict[str, Any]: Health status information
+        Dict[str, Any]: 健康状态信息
     """
     logger.info("health_check_called")
 
-    # Check database connectivity
+    # 检查数据库连接状态
     db_healthy = await database_service.health_check()
 
     response = {
@@ -159,7 +159,7 @@ async def health_check(request: Request) -> Dict[str, Any]:
         "timestamp": datetime.now().isoformat(),
     }
 
-    # If DB is unhealthy, set the appropriate status code
+    # 如果数据库不健康，设置相应的状态码
     status_code = status.HTTP_200_OK if db_healthy else status.HTTP_503_SERVICE_UNAVAILABLE
 
     return JSONResponse(content=response, status_code=status_code)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command-line interface for running evaluations."""
+"""用于运行评估的命令行界面。"""
 
 import argparse
 import asyncio
@@ -18,13 +18,13 @@ from colorama import (
 )
 from tqdm import tqdm
 
-# Fix import path for app module
+# 修复 app 模块的导入路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from app.core.config import settings
-from app.core.logging import logger
+from app.infrastructure.config import settings
+from app.infrastructure.logging import logger
 from evals.evaluator import Evaluator
 
-# Default configuration
+# 默认配置
 DEFAULT_CONFIG = {
     "generate_report": True,
     "model": settings.EVALUATION_LLM,
@@ -33,10 +33,10 @@ DEFAULT_CONFIG = {
 
 
 def print_title(title: str) -> None:
-    """Print a formatted title with colors.
+    """打印带颜色格式的标题。
 
     Args:
-        title: The title text to print
+        title: 要打印的标题文字
     """
     print("\n" + "=" * 60)
     print(f"{Fore.CYAN}{Style.BRIGHT}{title.center(60)}{Style.RESET_ALL}")
@@ -44,50 +44,50 @@ def print_title(title: str) -> None:
 
 
 def print_info(message: str) -> None:
-    """Print an info message with colors.
+    """打印带颜色的提示信息。
 
     Args:
-        message: The message to print
+        message: 要打印的信息
     """
     print(f"{Fore.GREEN}• {message}{Style.RESET_ALL}")
 
 
 def print_warning(message: str) -> None:
-    """Print a warning message with colors.
+    """打印带颜色的警告信息。
 
     Args:
-        message: The message to print
+        message: 要打印的信息
     """
     print(f"{Fore.YELLOW}⚠ {message}{Style.RESET_ALL}")
 
 
 def print_error(message: str) -> None:
-    """Print an error message with colors.
+    """打印带颜色的错误信息。
 
     Args:
-        message: The message to print
+        message: 要打印的信息
     """
     print(f"{Fore.RED}✗ {message}{Style.RESET_ALL}")
 
 
 def print_success(message: str) -> None:
-    """Print a success message with colors.
+    """打印带颜色的成功信息。
 
     Args:
-        message: The message to print
+        message: 要打印的信息
     """
     print(f"{Fore.GREEN}✓ {message}{Style.RESET_ALL}")
 
 
 def get_user_input(prompt: str, default: Optional[str] = None) -> str:
-    """Get user input with a colored prompt.
+    """获取用户输入，带有颜色提示。
 
     Args:
-        prompt: The prompt to display
-        default: Default value if user presses enter
+        prompt: 显示给用户的提示语
+        default: 用户直接按回车时的默认值
 
     Returns:
-        User input or default value
+        用户的输入或默认值
     """
     default_text = f" [{default}]" if default else ""
     user_input = input(f"{Fore.BLUE}{prompt}{default_text}: {Style.RESET_ALL}")
@@ -95,14 +95,14 @@ def get_user_input(prompt: str, default: Optional[str] = None) -> str:
 
 
 def get_yes_no(prompt: str, default: bool = True) -> bool:
-    """Get a yes/no response from the user.
+    """获取用户的是/否回答。
 
     Args:
-        prompt: The prompt to display
-        default: Default value if user presses enter
+        prompt: 显示给用户的提示语
+        default: 用户直接按回车时的默认值
 
     Returns:
-        True for yes, False for no
+        选"是"返回 True，选"否"返回 False
     """
     default_value = "Y/n" if default else "y/N"
     response = get_user_input(f"{prompt} {default_value}")
@@ -114,10 +114,10 @@ def get_yes_no(prompt: str, default: bool = True) -> bool:
 
 
 def display_summary(report: Dict[str, Any]) -> None:
-    """Display a summary of the evaluation results.
+    """展示评估结果的摘要信息。
 
     Args:
-        report: The evaluation report
+        report: 评估报告字典
     """
     print_title("Evaluation Summary")
 
@@ -163,10 +163,10 @@ def display_summary(report: Dict[str, Any]) -> None:
 
 
 async def run_evaluation(generate_report: bool = True) -> None:
-    """Run the evaluation process.
+    """运行评估流程。
 
     Args:
-        generate_report: Whether to generate a JSON report
+        generate_report: 是否生成 JSON 报告
     """
     print_title("Starting Evaluation")
     print_info(f"Using model: {settings.EVALUATION_LLM}")
@@ -178,7 +178,7 @@ async def run_evaluation(generate_report: bool = True) -> None:
 
         print_success("Evaluation completed successfully!")
 
-        # Display summary of results
+        # 展示结果摘要
         display_summary(evaluator.report)
 
     except Exception as e:
@@ -188,10 +188,10 @@ async def run_evaluation(generate_report: bool = True) -> None:
 
 
 def display_configuration(config: Dict[str, Any]) -> None:
-    """Display the current configuration.
+    """展示当前配置信息。
 
     Args:
-        config: The configuration dictionary
+        config: 配置字典
     """
     print_title("Configuration")
     print_info(f"Model: {config['model']}")
@@ -200,22 +200,22 @@ def display_configuration(config: Dict[str, Any]) -> None:
 
 
 def interactive_mode() -> None:
-    """Run the evaluator in interactive mode."""
+    """以交互模式运行评估器。"""
     colorama.init()
 
-    # Create a configuration with default values
+    # 用默认值创建配置
     config = DEFAULT_CONFIG.copy()
 
     print_title("Evaluation Runner")
     print_info("Welcome to the Evaluation Runner!")
     print_info("Press Enter to accept default values or input your own.")
 
-    # Display current configuration
+    # 展示当前配置
     display_configuration(config)
 
     print("\n" + f"{Fore.CYAN}Configuration Options (press Enter to accept defaults):{Style.RESET_ALL}")
 
-    # Allow user to change configuration or accept defaults
+    # 允许用户修改配置或接受默认值
     change_config = get_yes_no("Would you like to change the default configuration?", default=False)
 
     if change_config:
@@ -231,13 +231,13 @@ def interactive_mode() -> None:
 
 
 def quick_mode() -> None:
-    """Run the evaluator with all default settings."""
+    """使用默认设置快速运行评估。"""
     colorama.init()
     print_title("Quick Evaluation")
     print_info("Running evaluation with default settings...")
     print_info("(Press Ctrl+C to cancel)")
 
-    # Display defaults
+    # 展示默认配置
     display_configuration(DEFAULT_CONFIG)
 
     try:
@@ -248,7 +248,7 @@ def quick_mode() -> None:
 
 
 def main() -> None:
-    """Main entry point for the command-line interface."""
+    """命令行界面的主入口。"""
     parser = argparse.ArgumentParser(description="Run evaluations on model outputs")
     parser.add_argument("--no-report", action="store_true", help="Don't generate a JSON report")
     parser.add_argument("--interactive", action="store_true", help="Run in interactive mode")
@@ -261,7 +261,7 @@ def main() -> None:
     elif args.interactive:
         interactive_mode()
     else:
-        # Run with command-line arguments
+        # 使用命令行参数运行
         asyncio.run(run_evaluation(generate_report=not args.no_report))
 
 

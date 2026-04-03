@@ -1,4 +1,4 @@
-"""This file contains the thread model for the application."""
+"""这个文件包含应用的对话线程模型。"""
 
 from datetime import (
     UTC,
@@ -12,12 +12,12 @@ from sqlmodel import (
 
 
 class Thread(SQLModel, table=True):
-    """Thread model for storing conversation threads.
+    """用于存储对话线程的模型。
 
-    Attributes:
-        id: The primary key
-        created_at: When the thread was created
-        messages: Relationship to messages in this thread
+    属性:
+        id: 主键
+        created_at: 线程创建时间
+        messages: 与该线程中消息的关联关系
     """
 
     id: str = Field(primary_key=True)

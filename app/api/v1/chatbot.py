@@ -1,7 +1,6 @@
-"""Chatbot API endpoints for handling chat interactions.
+"""聊天机器人 API 接口，用于处理聊天交互。
 
-This module provides endpoints for chat interactions, including regular chat,
-streaming chat, message history management, and chat history clearing.
+这个模块提供了聊天交互的接口，包括普通聊天、流式聊天、消息历史管理和清除聊天记录。
 """
 
 import json
@@ -16,11 +15,11 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 
 from app.api.v1.auth import get_current_session
-from app.core.config import settings
-from app.core.langgraph.graph import LangGraphAgent
-from app.core.limiter import limiter
-from app.core.logging import logger
-from app.core.metrics import llm_stream_duration_seconds
+from app.infrastructure.config import settings
+from app.core.graph import LangGraphAgent
+from app.infrastructure.limiter import limiter
+from app.infrastructure.logging import logger
+from app.infrastructure.metrics import llm_stream_duration_seconds
 from app.models.session import Session
 from app.schemas.chat import (
     ChatRequest,
@@ -40,18 +39,18 @@ async def chat(
     chat_request: ChatRequest,
     session: Session = Depends(get_current_session),
 ):
-    """Process a chat request using LangGraph.
+    """使用 LangGraph 处理聊天请求。
 
     Args:
-        request: The FastAPI request object for rate limiting.
-        chat_request: The chat request containing messages.
-        session: The current session from the auth token.
+        request: FastAPI 请求对象，用于限流。
+        chat_request: 包含消息的聊天请求。
+        session: 从认证令牌中获取的当前会话。
 
     Returns:
-        ChatResponse: The processed chat response.
+        ChatResponse: 处理后的聊天响应。
 
     Raises:
-        HTTPException: If there's an error processing the request.
+        HTTPException: 处理请求出错时抛出。
     """
     try:
         logger.info(
@@ -77,18 +76,18 @@ async def chat_stream(
     chat_request: ChatRequest,
     session: Session = Depends(get_current_session),
 ):
-    """Process a chat request using LangGraph with streaming response.
+    """使用 LangGraph 处理聊天请求，返回流式响应。
 
     Args:
-        request: The FastAPI request object for rate limiting.
-        chat_request: The chat request containing messages.
-        session: The current session from the auth token.
+        request: FastAPI 请求对象，用于限流。
+        chat_request: 包含消息的聊天请求。
+        session: 从认证令牌中获取的当前会话。
 
     Returns:
-        StreamingResponse: A streaming response of the chat completion.
+        StreamingResponse: 聊天补全的流式响应。
 
     Raises:
-        HTTPException: If there's an error processing the request.
+        HTTPException: 处理请求出错时抛出。
     """
     try:
         logger.info(
@@ -98,13 +97,13 @@ async def chat_stream(
         )
 
         async def event_generator():
-            """Generate streaming events.
+            """生成流式事件。
 
             Yields:
-                str: Server-sent events in JSON format.
+                str: JSON 格式的服务端推送事件。
 
             Raises:
-                Exception: If there's an error during streaming.
+                Exception: 流式传输过程中出错时抛出。
             """
             try:
                 full_response = ""
@@ -116,7 +115,7 @@ async def chat_stream(
                         response = StreamResponse(content=chunk, done=False)
                         yield f"data: {json.dumps(response.model_dump())}\n\n"
 
-                # Send final message indicating completion
+                # 发送表示完成的最终消息
                 final_response = StreamResponse(content="", done=True)
                 yield f"data: {json.dumps(final_response.model_dump())}\n\n"
 
@@ -148,17 +147,17 @@ async def get_session_messages(
     request: Request,
     session: Session = Depends(get_current_session),
 ):
-    """Get all messages for a session.
+    """获取某个会话的所有消息。
 
     Args:
-        request: The FastAPI request object for rate limiting.
-        session: The current session from the auth token.
+        request: FastAPI 请求对象，用于限流。
+        session: 从认证令牌中获取的当前会话。
 
     Returns:
-        ChatResponse: All messages in the session.
+        ChatResponse: 该会话中的所有消息。
 
     Raises:
-        HTTPException: If there's an error retrieving the messages.
+        HTTPException: 获取消息出错时抛出。
     """
     try:
         messages = await agent.get_chat_history(session.id)
@@ -174,14 +173,14 @@ async def clear_chat_history(
     request: Request,
     session: Session = Depends(get_current_session),
 ):
-    """Clear all messages for a session.
+    """清除某个会话的所有消息。
 
     Args:
-        request: The FastAPI request object for rate limiting.
-        session: The current session from the auth token.
+        request: FastAPI 请求对象，用于限流。
+        session: 从认证令牌中获取的当前会话。
 
     Returns:
-        dict: A message indicating the chat history was cleared.
+        dict: 表示聊天记录已清除的提示信息。
     """
     try:
         await agent.clear_chat_history(session.id)

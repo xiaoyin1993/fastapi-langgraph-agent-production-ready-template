@@ -1,4 +1,4 @@
-"""Custom middleware for tracking metrics and other cross-cutting concerns."""
+"""自定义中间件，用于跟踪指标和处理其他横切关注点。"""
 
 import time
 from typing import Callable
@@ -11,12 +11,12 @@ from jose import (
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from app.core.config import settings
-from app.core.logging import (
+from app.infrastructure.config import settings
+from app.infrastructure.logging import (
     bind_context,
     clear_context,
 )
-from app.core.metrics import (
+from app.infrastructure.metrics import (
     db_connections,
     http_request_duration_seconds,
     http_requests_total,
@@ -24,17 +24,17 @@ from app.core.metrics import (
 
 
 class MetricsMiddleware(BaseHTTPMiddleware):
-    """Middleware for tracking HTTP request metrics."""
+    """用于跟踪 HTTP 请求指标的中间件。"""
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Track metrics for each request.
+        """跟踪每个请求的指标。
 
         Args:
-            request: The incoming request
-            call_next: The next middleware or route handler
+            request: 传入的请求
+            call_next: 下一个中间件或路由处理器
 
         Returns:
-            Response: The response from the application
+            Response: 应用返回的响应
         """
         start_time = time.time()
 
@@ -47,7 +47,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         finally:
             duration = time.time() - start_time
 
-            # Record metrics
+            # 记录指标
             http_requests_total.labels(method=request.method, endpoint=request.url.path, status=status_code).inc()
 
             http_request_duration_seconds.labels(method=request.method, endpoint=request.url.path).observe(duration)
@@ -56,53 +56,53 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
 
 class LoggingContextMiddleware(BaseHTTPMiddleware):
-    """Middleware for adding user_id and session_id to logging context."""
+    """用于将 user_id 和 session_id 添加到日志上下文的中间件。"""
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Extract user_id and session_id from authenticated requests and add to logging context.
+        """从已认证的请求中提取 user_id 和 session_id，并添加到日志上下文。
 
         Args:
-            request: The incoming request
-            call_next: The next middleware or route handler
+            request: 传入的请求
+            call_next: 下一个中间件或路由处理器
 
         Returns:
-            Response: The response from the application
+            Response: 应用返回的响应
         """
         try:
-            # Clear any existing context from previous requests
+            # 清除上一个请求遗留的上下文
             clear_context()
 
-            # Extract token from Authorization header
+            # 从 Authorization 请求头中提取 token
             auth_header = request.headers.get("authorization")
             if auth_header and auth_header.startswith("Bearer "):
                 token = auth_header.split(" ")[1]
 
                 try:
-                    # Decode token to get session_id (stored in "sub" claim)
+                    # 解码 token 获取 session_id（存储在 "sub" 字段中）
                     payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
                     session_id = payload.get("sub")
 
                     if session_id:
-                        # Bind session_id to logging context
+                        # 将 session_id 绑定到日志上下文
                         bind_context(session_id=session_id)
 
-                        # Try to get user_id from request state after authentication
-                        # This will be set by the dependency injection if the endpoint uses authentication
-                        # We'll check after the request is processed
+                        # 尝试从请求状态中获取 user_id
+                        # 如果端点使用了认证，user_id 会通过依赖注入设置
+                        # 我们会在请求处理完成后检查
 
                 except JWTError:
-                    # Token is invalid, but don't fail the request - let the auth dependency handle it
+                    # token 无效，但不要让请求失败——交给认证依赖去处理
                     pass
 
-            # Process the request
+            # 处理请求
             response = await call_next(request)
 
-            # After request processing, check if user info was added to request state
+            # 请求处理完成后，检查是否有用户信息添加到请求状态中
             if hasattr(request.state, "user_id"):
                 bind_context(user_id=request.state.user_id)
 
             return response
 
         finally:
-            # Always clear context after request is complete to avoid leaking to other requests
+            # 请求完成后务必清除上下文，避免泄漏到其他请求
             clear_context()

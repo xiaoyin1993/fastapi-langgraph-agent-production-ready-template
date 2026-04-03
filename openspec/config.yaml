@@ -1,0 +1,54 @@
+schema: spec-driven
+
+# 项目上下文
+context: |
+  技术栈：Python、FastAPI、LangGraph、LangChain、PostgreSQL/pgvector、Langfuse、mem0ai、JWT 认证
+  架构：FastAPI → 中间件 → 路由处理器 → LangGraphAgent → LLM（通过 Langfuse 追踪）→ 流式响应
+  包管理器：uv
+  代码检查/格式化：ruff
+  监控：Prometheus + Grafana
+  领域：生产级 AI 智能体应用，支持语义记忆与可观测性
+
+# 全局约束 — 源自 AGENTS.md「十大铁律」和 CLAUDE.md
+rules:
+  global:
+    # 导入规则
+    - 所有 import 必须放在文件顶部 — 禁止在函数或类内部导入
+    # 日志规则
+    - 所有日志必须使用 structlog，事件名采用小写下划线格式
+    - structlog 事件中禁止使用 f-string — 变量通过 kwargs 传递
+    - 使用 logger.exception() 而非 logger.error()，以保留完整错误堆栈
+    # 重试规则
+    - 所有重试逻辑必须使用 tenacity 并配置指数退避 — @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    # FastAPI 规则
+    - 所有路由必须添加限流装饰器（slowapi）
+    - 所有数据库操作必须使用异步方式（asyncpg/SQLModel）
+    - 使用 Depends() 进行依赖注入（认证、数据库、服务）
+    - 使用 lifespan 上下文管理器，禁止使用 @app.on_event
+    # LLM 规则
+    - 所有 LLM 操作必须启用 Langfuse 追踪
+    # 缓存规则
+    - 只缓存成功的响应 — 绝不缓存错误结果
+    # 输出规则
+    - 所有控制台输出使用 rich 格式化（进度条、表格、面板）
+    # 代码风格
+    - I/O 操作使用 async def，纯函数使用 def
+    - 采用函数式/声明式风格 — 除服务层和智能体外避免使用类
+    - 使用守卫语句和提前返回处理错误；正常逻辑放在最后
+    - 对预期错误使用 HTTPException 并附带合适的状态码
+    - 所有 API 接口必须使用 Pydantic 模型和类型注解（RORO 模式）
+    - 文件命名使用小写下划线格式（如 user_routes.py）
+    # 安全规则
+    - 禁止硬编码密钥或 API Key — 必须使用环境变量
+    - 所有用户输入必须通过 Pydantic 模型校验
+    # 可观测性
+    - 使用结构化日志并绑定上下文（request_id、session_id、user_id）
+  proposal:
+    - 每个提案聚焦于单一关注点
+    - 必须说明对可观测性的影响（Langfuse 追踪、Prometheus 指标、结构化日志）
+    - 必须考虑所有 I/O 操作的异步影响
+  tasks:
+    - 每个任务必须可独立测试
+    - 涉及 LLM 调用的任务必须包含 Langfuse 追踪配置
+    - 新功能必须包含 structlog 日志记录
+    - 新 API 接口必须明确所需的 Pydantic 模型

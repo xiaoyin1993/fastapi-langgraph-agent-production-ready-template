@@ -1,13 +1,13 @@
-"""This file contains the prompts for the agent."""
+"""这个文件包含 Agent 使用的提示词。"""
 
 import os
 from datetime import datetime
 
-from app.core.config import settings
+from app.infrastructure.config import settings
 
 
 def load_system_prompt(**kwargs):
-    """Load the system prompt from the file."""
+    """从文件中加载系统提示词。"""
     with open(os.path.join(os.path.dirname(__file__), "system.md"), "r") as f:
         return f.read().format(
             agent_name=settings.PROJECT_NAME + " Agent",

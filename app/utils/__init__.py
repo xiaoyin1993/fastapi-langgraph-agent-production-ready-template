@@ -1,4 +1,4 @@
-"""This file contains the utilities for the application."""
+"""这个文件包含了应用的各种工具函数。"""
 
 from .graph import (
     dump_messages,

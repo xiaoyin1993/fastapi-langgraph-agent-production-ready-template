@@ -1,4 +1,4 @@
-"""This file contains the schemas for the application."""
+"""这个文件包含应用的数据模式定义。"""
 
 from app.schemas.auth import Token
 from app.schemas.chat import (

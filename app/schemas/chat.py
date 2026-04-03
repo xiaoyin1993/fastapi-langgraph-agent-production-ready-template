@@ -1,4 +1,4 @@
-"""This file contains the chat schema for the application."""
+"""这个文件包含应用的聊天数据模式。"""
 
 import re
 from typing import (
@@ -14,11 +14,11 @@ from pydantic import (
 
 
 class Message(BaseModel):
-    """Message model for chat endpoint.
+    """聊天接口的消息模型。
 
-    Attributes:
-        role: The role of the message sender (user or assistant).
-        content: The content of the message.
+    属性:
+        role: 消息发送者的角色（用户或助手）。
+        content: 消息内容。
     """
 
     model_config = {"extra": "ignore"}
@@ -29,22 +29,22 @@ class Message(BaseModel):
     @field_validator("content")
     @classmethod
     def validate_content(cls, v: str) -> str:
-        """Validate the message content.
+        """校验消息内容。
 
-        Args:
-            v: The content to validate
+        参数:
+            v: 待校验的内容
 
-        Returns:
-            str: The validated content
+        返回:
+            str: 校验通过的内容
 
-        Raises:
-            ValueError: If the content contains disallowed patterns
+        异常:
+            ValueError: 内容包含不允许的模式时抛出
         """
-        # Check for potentially harmful content
+        # 检查可能有害的内容
         if re.search(r"<script.*?>.*?</script>", v, re.IGNORECASE | re.DOTALL):
             raise ValueError("Content contains potentially harmful script tags")
 
-        # Check for null bytes
+        # 检查空字节
         if "\0" in v:
             raise ValueError("Content contains null bytes")
 
@@ -52,10 +52,10 @@ class Message(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    """Request model for chat endpoint.
+    """聊天接口的请求模型。
 
-    Attributes:
-        messages: List of messages in the conversation.
+    属性:
+        messages: 对话中的消息列表。
     """
 
     messages: List[Message] = Field(
@@ -66,21 +66,21 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    """Response model for chat endpoint.
+    """聊天接口的响应模型。
 
-    Attributes:
-        messages: List of messages in the conversation.
+    属性:
+        messages: 对话中的消息列表。
     """
 
     messages: List[Message] = Field(..., description="List of messages in the conversation")
 
 
 class StreamResponse(BaseModel):
-    """Response model for streaming chat endpoint.
+    """流式聊天接口的响应模型。
 
-    Attributes:
-        content: The content of the current chunk.
-        done: Whether the stream is complete.
+    属性:
+        content: 当前数据块的内容。
+        done: 流式传输是否已完成。
     """
 
     content: str = Field(default="", description="The content of the current chunk")

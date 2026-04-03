@@ -1,4 +1,4 @@
-"""This file contains the authentication schema for the application."""
+"""这个文件包含应用的认证数据模式。"""
 
 import re
 from datetime import datetime
@@ -13,12 +13,12 @@ from pydantic import (
 
 
 class Token(BaseModel):
-    """Token model for authentication.
+    """认证令牌模型。
 
-    Attributes:
-        access_token: The JWT access token.
-        token_type: The type of token (always "bearer").
-        expires_at: The token expiration timestamp.
+    属性:
+        access_token: JWT 访问令牌。
+        token_type: 令牌类型（固定为 "bearer"）。
+        expires_at: 令牌过期时间戳。
     """
 
     access_token: str = Field(..., description="The JWT access token")
@@ -27,12 +27,12 @@ class Token(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    """Response model for login endpoint.
+    """登录接口的响应模型。
 
-    Attributes:
-        access_token: The JWT access token
-        token_type: The type of token (always "bearer")
-        expires_at: When the token expires
+    属性:
+        access_token: JWT 访问令牌
+        token_type: 令牌类型（固定为 "bearer"）
+        expires_at: 令牌过期时间
     """
 
     access_token: str = Field(..., description="The JWT access token")
@@ -41,11 +41,11 @@ class TokenResponse(BaseModel):
 
 
 class UserCreate(BaseModel):
-    """Request model for user registration.
+    """用户注册的请求模型。
 
-    Attributes:
-        email: User's email address
-        password: User's password
+    属性:
+        email: 用户的邮箱地址
+        password: 用户的密码
     """
 
     email: EmailStr = Field(..., description="User's email address")
@@ -54,20 +54,20 @@ class UserCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, v: SecretStr) -> SecretStr:
-        """Validate password strength.
+        """校验密码强度。
 
-        Args:
-            v: The password to validate
+        参数:
+            v: 待校验的密码
 
-        Returns:
-            SecretStr: The validated password
+        返回:
+            SecretStr: 校验通过的密码
 
-        Raises:
-            ValueError: If the password is not strong enough
+        异常:
+            ValueError: 密码强度不够时抛出
         """
         password = v.get_secret_value()
 
-        # Check for common password requirements
+        # 检查常见的密码要求
         if len(password) < 8:
             raise ValueError("Password must be at least 8 characters long")
 
@@ -87,12 +87,12 @@ class UserCreate(BaseModel):
 
 
 class UserResponse(BaseModel):
-    """Response model for user operations.
+    """用户操作的响应模型。
 
-    Attributes:
-        id: User's ID
-        email: User's email address
-        token: Authentication token
+    属性:
+        id: 用户 ID
+        email: 用户邮箱地址
+        token: 认证令牌
     """
 
     id: int = Field(..., description="User's ID")
@@ -101,12 +101,12 @@ class UserResponse(BaseModel):
 
 
 class SessionResponse(BaseModel):
-    """Response model for session creation.
+    """创建会话的响应模型。
 
-    Attributes:
-        session_id: The unique identifier for the chat session
-        name: Name of the session (defaults to empty string)
-        token: The authentication token for the session
+    属性:
+        session_id: 聊天会话的唯一标识符
+        name: 会话名称（默认为空字符串）
+        token: 会话的认证令牌
     """
 
     session_id: str = Field(..., description="The unique identifier for the chat session")
@@ -116,14 +116,14 @@ class SessionResponse(BaseModel):
     @field_validator("name")
     @classmethod
     def sanitize_name(cls, v: str) -> str:
-        """Sanitize the session name.
+        """清理会话名称中的特殊字符。
 
-        Args:
-            v: The name to sanitize
+        参数:
+            v: 待清理的名称
 
-        Returns:
-            str: The sanitized name
+        返回:
+            str: 清理后的名称
         """
-        # Remove any potentially harmful characters
+        # 移除可能有害的字符
         sanitized = re.sub(r'[<>{}[\]()\'"`]', "", v)
         return sanitized
