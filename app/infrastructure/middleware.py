@@ -17,7 +17,6 @@ from app.infrastructure.logging import (
     clear_context,
 )
 from app.infrastructure.metrics import (
-    db_connections,
     http_request_duration_seconds,
     http_requests_total,
 )

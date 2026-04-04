@@ -20,5 +20,13 @@ class Thread(SQLModel, table=True):
         messages: 与该线程中消息的关联关系
     """
 
-    id: str = Field(primary_key=True)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    __table_args__ = {"comment": "对话线程表，存储聊天对话线程信息"}
+
+    id: str = Field(
+        primary_key=True,
+        sa_column_kwargs={"comment": "线程唯一标识（主键）"},
+    )
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column_kwargs={"comment": "线程创建时间（UTC）"},
+    )

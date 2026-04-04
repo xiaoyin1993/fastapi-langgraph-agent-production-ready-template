@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from app.api.v1.auth import router as auth_router
 from app.api.v1.chatbot import router as chatbot_router
 from app.infrastructure.logging import logger
+from app.services.database import database_service
 
 api_router = APIRouter()
 
@@ -24,4 +25,9 @@ async def health_check():
         dict: 健康状态信息。
     """
     logger.info("health_check_called")
-    return {"status": "healthy", "version": "1.0.0"}
+    db_healthy = await database_service.health_check()
+    return {
+        "status": "healthy" if db_healthy else "degraded",
+        "version": "1.0.0",
+        "database": "healthy" if db_healthy else "unhealthy",
+    }

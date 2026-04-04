@@ -1,11 +1,11 @@
--- Database schema for the application
+-- Database schema for the application (PostgreSQL)
 -- Generated from SQLModel classes
 
 -- Create user table
-CREATE TABLE IF NOT EXISTS user (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE NOT NULL,
-    hashed_password TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS "user" (
+    id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    email VARCHAR UNIQUE NOT NULL,
+    hashed_password VARCHAR NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS session (
     user_id INTEGER NOT NULL,
     name TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES "user"(id) ON DELETE CASCADE
 );
 
 -- Create thread table
@@ -25,5 +25,5 @@ CREATE TABLE IF NOT EXISTS thread (
 );
 
 -- Create indexes for frequently queried columns
-CREATE INDEX IF NOT EXISTS idx_user_email ON user(email);
+CREATE INDEX IF NOT EXISTS idx_user_email ON "user"(email);
 CREATE INDEX IF NOT EXISTS idx_session_user_id ON session(user_id);

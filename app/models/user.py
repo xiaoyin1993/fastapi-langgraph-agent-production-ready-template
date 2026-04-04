@@ -28,9 +28,21 @@ class User(BaseModel, table=True):
         sessions: 与用户聊天会话的关联关系
     """
 
-    id: int = Field(default=None, primary_key=True)
-    email: str = Field(unique=True, index=True)
-    hashed_password: str
+    __table_args__ = {"comment": "用户表，存储用户账号和认证信息"}
+
+    id: int = Field(
+        default=None,
+        primary_key=True,
+        sa_column_kwargs={"comment": "用户自增主键ID"},
+    )
+    email: str = Field(
+        unique=True,
+        index=True,
+        sa_column_kwargs={"comment": "用户邮箱地址（唯一索引）"},
+    )
+    hashed_password: str = Field(
+        sa_column_kwargs={"comment": "bcrypt加密后的密码哈希值"},
+    )
     sessions: List["Session"] = Relationship(back_populates="user")
 
     def verify_password(self, password: str) -> bool:

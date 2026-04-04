@@ -28,7 +28,18 @@ class Session(BaseModel, table=True):
         user: 与会话所有者的关联关系
     """
 
-    id: str = Field(primary_key=True)
-    user_id: int = Field(foreign_key="user.id")
-    name: str = Field(default="")
+    __table_args__ = {"comment": "聊天会话表，存储用户的对话会话信息"}
+
+    id: str = Field(
+        primary_key=True,
+        sa_column_kwargs={"comment": "会话唯一标识（主键）"},
+    )
+    user_id: int = Field(
+        foreign_key="user.id",
+        sa_column_kwargs={"comment": "关联用户ID（外键 -> user.id）"},
+    )
+    name: str = Field(
+        default="",
+        sa_column_kwargs={"comment": "会话名称"},
+    )
     user: "User" = Relationship(back_populates="sessions")

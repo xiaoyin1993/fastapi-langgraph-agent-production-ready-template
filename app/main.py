@@ -52,6 +52,8 @@ async def lifespan(app: FastAPI):
         version=settings.VERSION,
         api_prefix=settings.API_V1_STR,
     )
+    # 创建数据表（仅在表不存在时才创建）
+    await database_service.create_tables()
     yield
     logger.info("application_shutdown")
 

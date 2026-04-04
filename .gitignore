@@ -25,3 +25,5 @@ evals/reports/
 .idea
 .cursor
 .claude
+web/.nicegui/
+

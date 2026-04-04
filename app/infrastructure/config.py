@@ -150,13 +150,13 @@ class Settings:
         self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
         self.OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "")
         self.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        self.DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gpt-5-mini")
+        self.DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gpt-4o-mini")
         self.DEFAULT_LLM_TEMPERATURE = float(os.getenv("DEFAULT_LLM_TEMPERATURE", "0.2"))
         self.MAX_TOKENS = int(os.getenv("MAX_TOKENS", "2000"))
         self.MAX_LLM_CALL_RETRIES = int(os.getenv("MAX_LLM_CALL_RETRIES", "3"))
 
         # 长期记忆配置
-        self.LONG_TERM_MEMORY_MODEL = os.getenv("LONG_TERM_MEMORY_MODEL", "gpt-5-nano")
+        self.LONG_TERM_MEMORY_MODEL = os.getenv("LONG_TERM_MEMORY_MODEL", "gpt-4o-mini")
         self.LONG_TERM_MEMORY_EMBEDDER_MODEL = os.getenv("LONG_TERM_MEMORY_EMBEDDER_MODEL", "text-embedding-3-small")
         self.LONG_TERM_MEMORY_EMBEDDING_DIMS = int(os.getenv("LONG_TERM_MEMORY_EMBEDDING_DIMS", "1536"))
         self.LONG_TERM_MEMORY_COLLECTION_NAME = os.getenv("LONG_TERM_MEMORY_COLLECTION_NAME", "longterm_memory")
@@ -203,7 +203,7 @@ class Settings:
                 self.RATE_LIMIT_ENDPOINTS[endpoint] = value
 
         # 评估配置
-        self.EVALUATION_LLM = os.getenv("EVALUATION_LLM", "gpt-5")
+        self.EVALUATION_LLM = os.getenv("EVALUATION_LLM", "gpt-4o")
         self.EVALUATION_BASE_URL = os.getenv("EVALUATION_BASE_URL", "https://api.openai.com/v1")
         self.EVALUATION_API_KEY = os.getenv("EVALUATION_API_KEY", self.OPENAI_API_KEY)
         self.EVALUATION_SLEEP_TIME = int(os.getenv("EVALUATION_SLEEP_TIME", "10"))

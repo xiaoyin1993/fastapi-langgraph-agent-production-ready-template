@@ -8,7 +8,6 @@ from typing import (
 )
 from urllib.parse import quote_plus
 
-from asgiref.sync import sync_to_async
 from langchain_core.messages import (
     BaseMessage,
     ToolMessage,
@@ -156,7 +155,7 @@ class LangGraphAgent:
         try:
             memory = await self._long_term_memory()
             results = await memory.search(user_id=str(user_id), query=query)
-            print(results)
+            logger.debug("memory_search_results", user_id=user_id, result_count=len(results.get("results", [])))
             return "\n".join([f"* {result['memory']}" for result in results["results"]])
         except Exception as e:
             logger.error("failed_to_get_relevant_memory", error=str(e), user_id=user_id, query=query)
@@ -377,35 +376,42 @@ class LangGraphAgent:
 
                 # 意图路由节点
                 graph_builder.add_node(
-                    "router", self._router,
+                    "router",
+                    self._router,
                     destinations=("chat_node", "qa_node", "task_node", "tool_node", "data_node"),
                 )
 
                 # 各意图处理节点
                 graph_builder.add_node(
-                    "chat_node", self._chat_node,
+                    "chat_node",
+                    self._chat_node,
                     destinations=(END,),
                 )
                 graph_builder.add_node(
-                    "qa_node", self._qa_node,
+                    "qa_node",
+                    self._qa_node,
                     destinations=("tool_call", END),
                 )
                 graph_builder.add_node(
-                    "task_node", self._task_node,
+                    "task_node",
+                    self._task_node,
                     destinations=(END,),
                 )
                 graph_builder.add_node(
-                    "tool_node", self._tool_node,
+                    "tool_node",
+                    self._tool_node,
                     destinations=("tool_call", END),
                 )
                 graph_builder.add_node(
-                    "data_node", self._data_node,
+                    "data_node",
+                    self._data_node,
                     destinations=("tool_call", END),
                 )
 
                 # 工具执行节点
                 graph_builder.add_node(
-                    "tool_call", self._tool_call,
+                    "tool_call",
+                    self._tool_call,
                     destinations=("qa_node", "tool_node", "data_node"),
                 )
 
@@ -491,7 +497,8 @@ class LangGraphAgent:
             )
             return self.__process_messages(response["messages"])
         except Exception as e:
-            logger.error(f"Error getting response: {str(e)}")
+            logger.exception("get_response_failed", session_id=session_id, user_id=user_id, error=str(e))
+            raise
 
     async def get_stream_response(
         self, messages: list[Message], session_id: str, user_id: Optional[str] = None, username: Optional[str] = None
@@ -541,7 +548,7 @@ class LangGraphAgent:
                             yield chunk.content
 
             # 流式传输完成后，获取最终状态并在后台更新记忆
-            state: StateSnapshot = await sync_to_async(self._graph.get_state)(config=config)
+            state: StateSnapshot = await self._graph.aget_state(config=config)
             if state.values and "messages" in state.values:
                 asyncio.create_task(
                     self._update_long_term_memory(
@@ -549,7 +556,7 @@ class LangGraphAgent:
                     )
                 )
         except Exception as stream_error:
-            logger.error("Error in stream processing", error=str(stream_error), session_id=session_id)
+            logger.exception("stream_processing_error", session_id=session_id, error=str(stream_error))
             raise stream_error
 
     async def get_chat_history(self, session_id: str) -> list[Message]:
@@ -564,9 +571,7 @@ class LangGraphAgent:
         if self._graph is None:
             self._graph = await self.create_graph()
 
-        state: StateSnapshot = await sync_to_async(self._graph.get_state)(
-            config={"configurable": {"thread_id": session_id}}
-        )
+        state: StateSnapshot = await self._graph.aget_state(config={"configurable": {"thread_id": session_id}})
         return self.__process_messages(state.values["messages"]) if state.values else []
 
     def __process_messages(self, messages: list[BaseMessage]) -> list[Message]:
@@ -596,11 +601,13 @@ class LangGraphAgent:
                 for table in settings.CHECKPOINT_TABLES:
                     try:
                         await conn.execute(f"DELETE FROM {table} WHERE thread_id = %s", (session_id,))
-                        logger.info(f"Cleared {table} for session {session_id}")
+                        logger.info("checkpoint_table_cleared", table=table, session_id=session_id)
                     except Exception as e:
-                        logger.error(f"Error clearing {table}", error=str(e))
+                        logger.exception(
+                            "checkpoint_table_clear_failed", table=table, session_id=session_id, error=str(e)
+                        )
                         raise
 
         except Exception as e:
-            logger.error("Failed to clear chat history", error=str(e))
+            logger.exception("clear_chat_history_failed", session_id=session_id, error=str(e))
             raise

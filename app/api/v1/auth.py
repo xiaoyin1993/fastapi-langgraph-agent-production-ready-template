@@ -40,7 +40,6 @@ from app.utils.auth import (
 from app.utils.sanitization import (
     sanitize_email,
     sanitize_string,
-    validate_password_strength,
 )
 
 router = APIRouter()
@@ -168,9 +167,8 @@ async def register_user(request: Request, user_data: UserCreate):
         # 清理邮箱
         sanitized_email = sanitize_email(user_data.email)
 
-        # 提取并验证密码强度
+        # 提取密码（Pydantic schema 已完成强度校验）
         password = user_data.password.get_secret_value()
-        validate_password_strength(password)
 
         # 检查用户是否已存在
         if await db_service.get_user_by_email(sanitized_email):

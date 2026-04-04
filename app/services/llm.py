@@ -127,6 +127,7 @@ class LLMService:
     def __init__(self):
         """初始化 LLM 服务。"""
         self._llm: Optional[BaseChatModel] = None
+        self._tools: Optional[List] = None
         self._current_model_index: int = 0
 
         # 在注册表中查找默认模型的索引
@@ -181,6 +182,11 @@ class LLMService:
 
             self._current_model_index = next_index
             self._llm = next_model_entry["llm"]
+
+            # 如果之前绑定了工具，重新绑定到新模型
+            if self._tools:
+                self._llm = self._llm.bind_tools(self._tools)
+                logger.debug("tools_rebound_after_switch", tool_count=len(self._tools), model=next_model_entry["name"])
 
             logger.info("model_switched", new_model=next_model_entry["name"], new_index=next_index)
             return True
@@ -326,6 +332,7 @@ class LLMService:
             返回自身，支持链式调用
         """
         if self._llm:
+            self._tools = tools
             self._llm = self._llm.bind_tools(tools)
             logger.debug("tools_bound_to_llm", tool_count=len(tools))
         return self

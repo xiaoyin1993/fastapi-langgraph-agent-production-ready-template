@@ -7,13 +7,12 @@ from typing import (
 
 from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import (
-    Session,
     SQLModel,
-    create_engine,
     select,
 )
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.infrastructure.config import (
     Environment,
@@ -28,34 +27,30 @@ class DatabaseService:
     """数据库操作的服务类。
 
     这个类负责处理用户、会话和消息相关的所有数据库操作。
-    它使用 SQLModel 进行 ORM 操作，并维护一个数据库连接池。
+    它使用 SQLModel 进行 ORM 操作，并维护一个异步数据库连接池。
     """
 
     def __init__(self):
-        """初始化数据库服务，设置连接池。"""
+        """初始化数据库服务，设置异步连接池。"""
         try:
             # 根据不同环境配置数据库连接池参数
             pool_size = settings.POSTGRES_POOL_SIZE
             max_overflow = settings.POSTGRES_MAX_OVERFLOW
 
-            # 使用合适的连接池配置创建数据库引擎
+            # 使用 psycopg3 异步驱动
             connection_url = (
-                f"postgresql://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}"
+                f"postgresql+psycopg://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}"
                 f"@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
             )
 
-            self.engine = create_engine(
+            self.engine = create_async_engine(
                 connection_url,
                 pool_pre_ping=True,
-                poolclass=QueuePool,
                 pool_size=pool_size,
                 max_overflow=max_overflow,
                 pool_timeout=30,  # 连接超时时间（秒）
                 pool_recycle=1800,  # 每 30 分钟回收一次连接
             )
-
-            # 创建数据表（仅在表不存在时才创建）
-            SQLModel.metadata.create_all(self.engine)
 
             logger.info(
                 "database_initialized",
@@ -69,6 +64,11 @@ class DatabaseService:
             if settings.ENVIRONMENT != Environment.PRODUCTION:
                 raise
 
+    async def create_tables(self):
+        """创建数据表（仅在表不存在时才创建）。"""
+        async with self.engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+
     async def create_user(self, email: str, password: str) -> User:
         """创建一个新用户。
 
@@ -79,11 +79,11 @@ class DatabaseService:
         Returns:
             User: 创建好的用户对象
         """
-        with Session(self.engine) as session:
+        async with AsyncSession(self.engine) as session:
             user = User(email=email, hashed_password=password)
             session.add(user)
-            session.commit()
-            session.refresh(user)
+            await session.commit()
+            await session.refresh(user)
             logger.info("user_created", email=email)
             return user
 
@@ -96,8 +96,8 @@ class DatabaseService:
         Returns:
             Optional[User]: 如果找到则返回用户对象，否则返回 None
         """
-        with Session(self.engine) as session:
-            user = session.get(User, user_id)
+        async with AsyncSession(self.engine) as session:
+            user = await session.get(User, user_id)
             return user
 
     async def get_user_by_email(self, email: str) -> Optional[User]:
@@ -109,9 +109,10 @@ class DatabaseService:
         Returns:
             Optional[User]: 如果找到则返回用户对象，否则返回 None
         """
-        with Session(self.engine) as session:
+        async with AsyncSession(self.engine) as session:
             statement = select(User).where(User.email == email)
-            user = session.exec(statement).first()
+            result = await session.exec(statement)
+            user = result.first()
             return user
 
     async def delete_user_by_email(self, email: str) -> bool:
@@ -123,13 +124,14 @@ class DatabaseService:
         Returns:
             bool: 删除成功返回 True，用户不存在返回 False
         """
-        with Session(self.engine) as session:
-            user = session.exec(select(User).where(User.email == email)).first()
+        async with AsyncSession(self.engine) as session:
+            result = await session.exec(select(User).where(User.email == email))
+            user = result.first()
             if not user:
                 return False
 
-            session.delete(user)
-            session.commit()
+            await session.delete(user)
+            await session.commit()
             logger.info("user_deleted", email=email)
             return True
 
@@ -144,11 +146,11 @@ class DatabaseService:
         Returns:
             ChatSession: 创建好的会话对象
         """
-        with Session(self.engine) as session:
+        async with AsyncSession(self.engine) as session:
             chat_session = ChatSession(id=session_id, user_id=user_id, name=name)
             session.add(chat_session)
-            session.commit()
-            session.refresh(chat_session)
+            await session.commit()
+            await session.refresh(chat_session)
             logger.info("session_created", session_id=session_id, user_id=user_id, name=name)
             return chat_session
 
@@ -161,13 +163,13 @@ class DatabaseService:
         Returns:
             bool: 删除成功返回 True，会话不存在返回 False
         """
-        with Session(self.engine) as session:
-            chat_session = session.get(ChatSession, session_id)
+        async with AsyncSession(self.engine) as session:
+            chat_session = await session.get(ChatSession, session_id)
             if not chat_session:
                 return False
 
-            session.delete(chat_session)
-            session.commit()
+            await session.delete(chat_session)
+            await session.commit()
             logger.info("session_deleted", session_id=session_id)
             return True
 
@@ -180,8 +182,8 @@ class DatabaseService:
         Returns:
             Optional[ChatSession]: 如果找到则返回会话对象，否则返回 None
         """
-        with Session(self.engine) as session:
-            chat_session = session.get(ChatSession, session_id)
+        async with AsyncSession(self.engine) as session:
+            chat_session = await session.get(ChatSession, session_id)
             return chat_session
 
     async def get_user_sessions(self, user_id: int) -> List[ChatSession]:
@@ -193,9 +195,10 @@ class DatabaseService:
         Returns:
             List[ChatSession]: 该用户的会话列表
         """
-        with Session(self.engine) as session:
+        async with AsyncSession(self.engine) as session:
             statement = select(ChatSession).where(ChatSession.user_id == user_id).order_by(ChatSession.created_at)
-            sessions = session.exec(statement).all()
+            result = await session.exec(statement)
+            sessions = result.all()
             return sessions
 
     async def update_session_name(self, session_id: str, name: str) -> ChatSession:
@@ -211,25 +214,17 @@ class DatabaseService:
         Raises:
             HTTPException: 如果会话不存在则抛出异常
         """
-        with Session(self.engine) as session:
-            chat_session = session.get(ChatSession, session_id)
+        async with AsyncSession(self.engine) as session:
+            chat_session = await session.get(ChatSession, session_id)
             if not chat_session:
                 raise HTTPException(status_code=404, detail="Session not found")
 
             chat_session.name = name
             session.add(chat_session)
-            session.commit()
-            session.refresh(chat_session)
+            await session.commit()
+            await session.refresh(chat_session)
             logger.info("session_name_updated", session_id=session_id, name=name)
             return chat_session
-
-    def get_session_maker(self):
-        """获取一个用于创建数据库会话的 session maker。
-
-        Returns:
-            Session: SQLModel 的 session maker
-        """
-        return Session(self.engine)
 
     async def health_check(self) -> bool:
         """检查数据库连接是否正常。
@@ -238,9 +233,8 @@ class DatabaseService:
             bool: 数据库正常返回 True，否则返回 False
         """
         try:
-            with Session(self.engine) as session:
-                # 执行一个简单查询来检查连接是否正常
-                session.exec(select(1)).first()
+            async with AsyncSession(self.engine) as session:
+                await session.exec(select(1))
                 return True
         except Exception as e:
             logger.error("database_health_check_failed", error=str(e))
