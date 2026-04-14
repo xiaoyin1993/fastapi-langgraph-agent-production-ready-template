@@ -53,6 +53,16 @@ class AuthState:
         app.storage.user.pop("session_name", None)
         app.storage.user.pop("session_token", None)
 
+    # ==================== Agent 选择 ====================
+
+    @staticmethod
+    def get_selected_agent() -> str | None:
+        return app.storage.user.get("selected_agent")
+
+    @staticmethod
+    def set_selected_agent(agent_key: str):
+        app.storage.user["selected_agent"] = agent_key
+
     @staticmethod
     def logout():
         app.storage.user.clear()

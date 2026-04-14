@@ -112,6 +112,27 @@ def apply_theme():
             background: {TEXT_SECONDARY};
         }}
 
+        /* Agent 选择器 */
+        .agent-select .q-field__control {{
+            background-color: {BG_PAGE} !important;
+            border: 1px solid {BORDER};
+            border-radius: 8px;
+            min-height: 32px !important;
+            padding: 0 8px;
+        }}
+        .agent-select .q-field__native {{
+            color: {TEXT_PRIMARY} !important;
+            font-size: 0.85em;
+            padding: 0 !important;
+            min-height: 32px !important;
+        }}
+        .agent-select .q-field__append {{
+            color: {TEXT_SECONDARY} !important;
+        }}
+        .agent-select .q-field__control:focus-within {{
+            border-color: {ACCENT};
+        }}
+
         /* 消息列表 */
         .message-container {{
             display: flex;

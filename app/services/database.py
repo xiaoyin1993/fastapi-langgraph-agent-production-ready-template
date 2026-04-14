@@ -6,19 +6,16 @@ from typing import (
 )
 
 from fastapi import HTTPException
+from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlmodel import (
-    SQLModel,
-    select,
-)
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.infrastructure.config import (
     Environment,
     settings,
 )
 from app.infrastructure.logging import logger
+from app.models.base import Base
 from app.models.session import Session as ChatSession
 from app.models.user import User
 
@@ -27,17 +24,15 @@ class DatabaseService:
     """数据库操作的服务类。
 
     这个类负责处理用户、会话和消息相关的所有数据库操作。
-    它使用 SQLModel 进行 ORM 操作，并维护一个异步数据库连接池。
+    它使用 SQLAlchemy 2.0 进行 ORM 操作，并维护一个异步数据库连接池。
     """
 
     def __init__(self):
         """初始化数据库服务，设置异步连接池。"""
         try:
-            # 根据不同环境配置数据库连接池参数
             pool_size = settings.POSTGRES_POOL_SIZE
             max_overflow = settings.POSTGRES_MAX_OVERFLOW
 
-            # 使用 psycopg3 异步驱动
             connection_url = (
                 f"postgresql+psycopg://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}"
                 f"@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
@@ -48,8 +43,8 @@ class DatabaseService:
                 pool_pre_ping=True,
                 pool_size=pool_size,
                 max_overflow=max_overflow,
-                pool_timeout=30,  # 连接超时时间（秒）
-                pool_recycle=1800,  # 每 30 分钟回收一次连接
+                pool_timeout=30,
+                pool_recycle=1800,
             )
 
             logger.info(
@@ -60,14 +55,13 @@ class DatabaseService:
             )
         except SQLAlchemyError as e:
             logger.error("database_initialization_error", error=str(e), environment=settings.ENVIRONMENT.value)
-            # 生产环境下不抛异常，即使数据库有问题也让应用正常启动
             if settings.ENVIRONMENT != Environment.PRODUCTION:
                 raise
 
     async def create_tables(self):
         """创建数据表（仅在表不存在时才创建）。"""
         async with self.engine.begin() as conn:
-            await conn.run_sync(SQLModel.metadata.create_all)
+            await conn.run_sync(Base.metadata.create_all)
 
     async def create_user(self, email: str, password: str) -> User:
         """创建一个新用户。
@@ -110,10 +104,8 @@ class DatabaseService:
             Optional[User]: 如果找到则返回用户对象，否则返回 None
         """
         async with AsyncSession(self.engine) as session:
-            statement = select(User).where(User.email == email)
-            result = await session.exec(statement)
-            user = result.first()
-            return user
+            result = await session.scalars(select(User).where(User.email == email))
+            return result.first()
 
     async def delete_user_by_email(self, email: str) -> bool:
         """根据邮箱删除用户。
@@ -125,7 +117,7 @@ class DatabaseService:
             bool: 删除成功返回 True，用户不存在返回 False
         """
         async with AsyncSession(self.engine) as session:
-            result = await session.exec(select(User).where(User.email == email))
+            result = await session.scalars(select(User).where(User.email == email))
             user = result.first()
             if not user:
                 return False
@@ -196,10 +188,10 @@ class DatabaseService:
             List[ChatSession]: 该用户的会话列表
         """
         async with AsyncSession(self.engine) as session:
-            statement = select(ChatSession).where(ChatSession.user_id == user_id).order_by(ChatSession.created_at)
-            result = await session.exec(statement)
-            sessions = result.all()
-            return sessions
+            result = await session.scalars(
+                select(ChatSession).where(ChatSession.user_id == user_id).order_by(ChatSession.created_at)
+            )
+            return list(result.all())
 
     async def update_session_name(self, session_id: str, name: str) -> ChatSession:
         """更新会话名称。
@@ -234,7 +226,7 @@ class DatabaseService:
         """
         try:
             async with AsyncSession(self.engine) as session:
-                await session.exec(select(1))
+                await session.execute(text("SELECT 1"))
                 return True
         except Exception as e:
             logger.error("database_health_check_failed", error=str(e))

@@ -6,9 +6,22 @@ import httpx
 import config
 
 
-async def stream_chat(messages: list[dict], session_token: str) -> AsyncGenerator[str, None]:
-    """SSE 流式聊天，逐 token 生成内容"""
-    url = f"{config.API_BASE_URL}/chatbot/chat/stream"
+async def stream_chat(
+    messages: list[dict],
+    session_token: str,
+    agent_id: str | None = None,
+) -> AsyncGenerator[str, None]:
+    """SSE 流式聊天，逐 token 生成内容。
+
+    Args:
+        messages: 消息列表。
+        session_token: 会话 token。
+        agent_id: 可选的 Agent 标识，不指定则用默认 Agent。
+    """
+    if agent_id:
+        url = f"{config.API_BASE_URL}/chatbot/{agent_id}/chat/stream"
+    else:
+        url = f"{config.API_BASE_URL}/chatbot/chat/stream"
     headers = {
         "Authorization": f"Bearer {session_token}",
         "Accept": "text/event-stream",

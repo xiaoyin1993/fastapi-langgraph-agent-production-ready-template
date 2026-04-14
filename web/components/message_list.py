@@ -1,17 +1,97 @@
 from nicegui import ui
 
-from theme import TEXT_SECONDARY
+from theme import ACCENT, TEXT_SECONDARY
+
+
+# 流式生成指示器的 CSS（只注入一次）
+_STREAM_CSS = (
+    "<style>"
+    ".thinking-indicator {"
+    "    display: flex; align-items: center; gap: 6px;"
+    "    padding: 4px 0;"
+    "}"
+    ".thinking-indicator .pulse-ring {"
+    "    width: 8px; height: 8px; border-radius: 50%;"
+    f"    background: {ACCENT};"
+    "    animation: pulse-ring 1.2s cubic-bezier(.4,0,.6,1) infinite;"
+    "}"
+    ".thinking-indicator .pulse-ring:nth-child(2) { animation-delay: .15s; }"
+    ".thinking-indicator .pulse-ring:nth-child(3) { animation-delay: .3s; }"
+    ".thinking-indicator .thinking-text {"
+    f"    font-size: 13px; color: {TEXT_SECONDARY};"
+    "    animation: fade-pulse 1.6s ease-in-out infinite;"
+    "}"
+    "@keyframes pulse-ring {"
+    "    0%,100% { transform: scale(.7); opacity:.35; }"
+    "    50% { transform: scale(1); opacity:1; }"
+    "}"
+    "@keyframes fade-pulse {"
+    "    0%,100% { opacity:.5; }"
+    "    50% { opacity:1; }"
+    "}"
+    ".streaming-cursor::after {"
+    "    content: '';"
+    "    display: inline-block;"
+    "    width: 2px; height: 1em;"
+    f"    background: {ACCENT};"
+    "    margin-left: 2px;"
+    "    vertical-align: text-bottom;"
+    "    animation: cursor-blink .6s steps(2) infinite;"
+    "}"
+    "@keyframes cursor-blink {"
+    "    0% { opacity: 1; }"
+    "    50% { opacity: 0; }"
+    "}"
+    ".done-indicator {"
+    "    display: flex; align-items: center; gap: 4px;"
+    "    padding: 4px 0 0 0;"
+    "    animation: done-show .5s ease-out forwards;"
+    "}"
+    ".done-indicator svg {"
+    "    width: 10px; height: 10px;"
+    "}"
+    ".done-indicator span {"
+    f"    font-size: 11px; color: {TEXT_SECONDARY};"
+    "}"
+    "@keyframes done-show {"
+    "    0%   { opacity:0; transform: translateY(4px); }"
+    "    100% { opacity:1; transform: translateY(0); }"
+    "}"
+    "</style>"
+)
+
+def _ensure_css():
+    ui.add_head_html(_STREAM_CSS)
 
 
 class MessageList:
     def __init__(self):
         self.scroll_area = None
         self.container = None
+        self._scroll_id = None  # scroll 容器的 DOM id
 
     def render(self) -> ui.scroll_area:
+        _ensure_css()
         self.scroll_area = ui.scroll_area().classes("flex-grow w-full")
+        self._scroll_id = f"c{self.scroll_area.id}"
         with self.scroll_area:
             self.container = ui.column().classes("w-full gap-3 p-4")
+
+        # 注入全局 JS：监听滚动事件，维护 window.__chatPinned 状态
+        ui.run_javascript(f'''(() => {{
+            window.__chatPinned = false;
+            // 延迟绑定，等 DOM 渲染完成
+            setTimeout(() => {{
+                const sa = document.getElementById("{self._scroll_id}");
+                const el = sa && sa.querySelector(".q-scrollarea__container");
+                if (!el) return;
+                el.addEventListener("scroll", () => {{
+                    const atBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 50;
+                    window.__chatPinned = !atBottom;
+                }});
+            }}, 300);
+        }})()''')
+
         return self.scroll_area
 
     def clear(self):
@@ -25,10 +105,12 @@ class MessageList:
             f'</div>'
         )
 
-    def _assistant_html(self, content: str) -> str:
+    @staticmethod
+    def _assistant_html(content: str, streaming: bool = False) -> str:
+        cursor_cls = ' streaming-cursor' if streaming else ''
         return (
             f'<div style="display:flex;justify-content:flex-start;">'
-            f'<div class="assistant-bubble">{content}</div>'
+            f'<div class="assistant-bubble{cursor_cls}">{content}</div>'
             f'</div>'
         )
 
@@ -39,20 +121,44 @@ class MessageList:
             ui.html(self._user_html(content)).style("width:100%;overflow:hidden;")
         self._scroll_to_bottom()
 
-    def add_assistant_message(self, content: str = "") -> ui.html:
+    def add_assistant_message(self, content: str = "", streaming: bool = False) -> ui.html:
         """添加助手消息气泡，返回 html 元素以便流式更新"""
         if not self.container:
             return None
         with self.container:
-            bubble = ui.html(self._assistant_html(content)).style("width:100%;overflow:hidden;")
+            bubble = ui.html(self._assistant_html(content, streaming=streaming)).style(
+                "width:100%;overflow:hidden;"
+            )
         self._scroll_to_bottom()
         return bubble
 
-    def update_assistant_message(self, bubble: ui.html, content: str):
+    def update_assistant_message(self, bubble: ui.html, content: str, streaming: bool = False):
         """更新助手消息内容（用于流式）"""
         if bubble:
-            bubble.set_content(self._assistant_html(content))
+            try:
+                bubble.set_content(self._assistant_html(content, streaming=streaming))
+                self._scroll_to_bottom()
+            except RuntimeError:
+                pass
+
+    def finalize_assistant_message(self, bubble: ui.html, content: str):
+        """流式结束：移除光标，追加完成标记。"""
+        if not bubble:
+            return
+        done_mark = (
+            '<div class="done-indicator">'
+            f'<svg viewBox="0 0 16 16" fill="{ACCENT}" width="10" height="10" style="width:10px;height:10px;min-width:10px;">'
+            '<path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0'
+            'L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>'
+            '</svg>'
+            '<span>已完成</span>'
+            '</div>'
+        )
+        try:
+            bubble.set_content(self._assistant_html(content, streaming=False) + done_mark)
             self._scroll_to_bottom()
+        except RuntimeError:
+            pass
 
     def load_history(self, messages: list[dict]):
         """加载历史消息"""
@@ -75,34 +181,23 @@ class MessageList:
                     ui.html(self._user_html(content)).style("width:100%;overflow:hidden;")
                 elif role == "assistant":
                     ui.html(self._assistant_html(content)).style("width:100%;overflow:hidden;")
-        self._scroll_to_bottom()
+        self._force_scroll_to_bottom()
 
     def show_typing(self) -> ui.html:
-        """显示输入中动画"""
+        """显示「思考中」指示器"""
         if not self.container:
             return None
         with self.container:
             typing_el = ui.html(
                 '<div style="display:flex;justify-content:flex-start;">'
                 '<div class="assistant-bubble" style="padding: 12px 20px;">'
-                '<div style="display:flex;gap:4px;align-items:center;">'
-                '<span class="typing-dot" style="animation:blink 1.4s infinite both;animation-delay:0s;"></span>'
-                '<span class="typing-dot" style="animation:blink 1.4s infinite both;animation-delay:0.2s;"></span>'
-                '<span class="typing-dot" style="animation:blink 1.4s infinite both;animation-delay:0.4s;"></span>'
+                '<div class="thinking-indicator">'
+                '<span class="pulse-ring"></span>'
+                '<span class="pulse-ring"></span>'
+                '<span class="pulse-ring"></span>'
+                '<span class="thinking-text">思考中...</span>'
                 '</div></div></div>'
             ).style("width:100%;")
-            ui.add_head_html("""
-            <style>
-                .typing-dot {
-                    width: 8px; height: 8px; border-radius: 50%;
-                    background-color: #8b949e; display: inline-block;
-                }
-                @keyframes blink {
-                    0%, 80%, 100% { opacity: 0.3; }
-                    40% { opacity: 1; }
-                }
-            </style>
-            """)
         self._scroll_to_bottom()
         return typing_el
 
@@ -114,8 +209,36 @@ class MessageList:
                 pass
 
     def _scroll_to_bottom(self):
-        if self.scroll_area:
-            self.scroll_area.scroll_to(percent=1.0)
+        """仅在用户没有手动上滚时滚到底部。"""
+        if not self._scroll_id:
+            return
+        try:
+            ui.run_javascript(f'''(() => {{
+                if (window.__chatPinned) return;
+                const sa = document.getElementById("{self._scroll_id}");
+                const el = sa && sa.querySelector(".q-scrollarea__container");
+                if (el) el.scrollTop = el.scrollHeight;
+            }})()''')
+        except RuntimeError:
+            pass
+
+    def _force_scroll_to_bottom(self):
+        """强制滚到底部（加载历史、发新消息时）。"""
+        if not self._scroll_id:
+            return
+        try:
+            ui.run_javascript(f'''(() => {{
+                window.__chatPinned = false;
+                const sa = document.getElementById("{self._scroll_id}");
+                const el = sa && sa.querySelector(".q-scrollarea__container");
+                if (el) el.scrollTop = el.scrollHeight;
+            }})()''')
+        except RuntimeError:
+            pass
+
+    def reset_auto_scroll(self):
+        """发送新消息时重置并强制滚到底部。"""
+        self._force_scroll_to_bottom()
 
 
 def _escape(text: str) -> str:

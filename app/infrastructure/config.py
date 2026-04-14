@@ -8,13 +8,6 @@ import json
 import os
 from enum import Enum
 from pathlib import Path
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    Union,
-)
 
 from dotenv import load_dotenv
 
@@ -146,10 +139,8 @@ class Settings:
         self.LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
 
         # LangGraph 配置
-        self.LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")  # openai 或 ollama
         self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-        self.OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "")
-        self.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        self.OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "")
         self.DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gpt-4o-mini")
         self.DEFAULT_LLM_TEMPERATURE = float(os.getenv("DEFAULT_LLM_TEMPERATURE", "0.2"))
         self.MAX_TOKENS = int(os.getenv("MAX_TOKENS", "2000"))

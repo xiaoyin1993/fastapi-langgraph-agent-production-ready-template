@@ -20,7 +20,7 @@ dependencies = [
     "python-dotenv>=1.1.0",
     "python-jose[cryptography]>=3.4.0",
     "python-multipart>=0.0.20",
-    "sqlmodel>=0.0.24",
+    "sqlalchemy[asyncio]>=2.0.0",
     "greenlet>=3.0.0",
     "structlog>=25.2.0",
     "uvicorn>=0.34.0",
@@ -40,6 +40,7 @@ dependencies = [
     "matplotlib>=3.9.0",
     "numpy>=2.0.0",
     "ollama>=0.6.1",
+    "httpx>=0.28.0",
 ]
 
 [project.optional-dependencies]

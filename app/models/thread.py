@@ -1,32 +1,31 @@
 """这个文件包含应用的对话线程模型。"""
 
-from datetime import (
-    UTC,
-    datetime,
-)
+from datetime import UTC, datetime
 
-from sqlmodel import (
-    Field,
-    SQLModel,
-)
+from sqlalchemy import DateTime, String
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.models.base import Base
 
 
-class Thread(SQLModel, table=True):
+class Thread(Base):
     """用于存储对话线程的模型。
 
     属性:
         id: 主键
         created_at: 线程创建时间
-        messages: 与该线程中消息的关联关系
     """
 
+    __tablename__ = "thread"
     __table_args__ = {"comment": "对话线程表，存储聊天对话线程信息"}
 
-    id: str = Field(
+    id: Mapped[str] = mapped_column(
+        String,
         primary_key=True,
-        sa_column_kwargs={"comment": "线程唯一标识（主键）"},
+        comment="线程唯一标识（主键）",
     )
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC),
-        sa_column_kwargs={"comment": "线程创建时间（UTC）"},
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        comment="线程创建时间（UTC）",
     )

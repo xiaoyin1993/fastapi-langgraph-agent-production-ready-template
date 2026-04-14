@@ -91,12 +91,17 @@ class SessionSidebar:
 
                             ui.menu_item("重命名", on_click=make_rename)
                             ui.menu_item("删除", on_click=make_delete)
+                            ui.separator()
+                            ui.menu_item("删除全部对话", on_click=self._delete_all_dialog)
 
     async def _select_session(self, session_id: str, name: str, token: str):
         auth_state.set_session(session_id, name, token)
         self._render_session_list()
-        if self.on_session_select:
-            await self.on_session_select()
+        try:
+            if self.on_session_select:
+                await self.on_session_select()
+        except RuntimeError:
+            pass
 
     async def _create_session(self):
         user_token = auth_state.get_user_token()
@@ -111,8 +116,13 @@ class SessionSidebar:
             await self.load_sessions()
             if self.on_session_select:
                 await self.on_session_select()
+        except RuntimeError:
+            pass
         except ApiError as e:
-            ui.notify(f"创建会话失败：{e.detail}", type="negative")
+            try:
+                ui.notify(f"创建会话失败：{e.detail}", type="negative")
+            except RuntimeError:
+                pass
 
     async def _rename_dialog(self, session_id: str, session_token: str):
         with ui.dialog() as dialog, ui.card().style(f"background-color: #1c2128; border: 1px solid {BORDER};"):
@@ -143,8 +153,13 @@ class SessionSidebar:
                 auth_state.set_session(session_id, name.strip(), new_token)
             dialog.close()
             await self.load_sessions()
+        except RuntimeError:
+            pass
         except ApiError as e:
-            ui.notify(f"重命名失败：{e.detail}", type="negative")
+            try:
+                ui.notify(f"重命名失败：{e.detail}", type="negative")
+            except RuntimeError:
+                pass
 
     async def _delete_dialog(self, session_id: str, session_token: str):
         with ui.dialog() as dialog, ui.card().style(f"background-color: #1c2128; border: 1px solid {BORDER};"):
@@ -173,5 +188,59 @@ class SessionSidebar:
             await self.load_sessions()
             if self.on_session_select:
                 await self.on_session_select()
+        except RuntimeError:
+            pass
         except ApiError as e:
-            ui.notify(f"删除失败：{e.detail}", type="negative")
+            try:
+                ui.notify(f"删除失败：{e.detail}", type="negative")
+            except RuntimeError:
+                pass
+
+    async def _delete_all_dialog(self):
+        """确认删除全部对话的弹窗。"""
+        if not self.sessions:
+            ui.notify("没有可删除的对话", type="info")
+            return
+
+        with ui.dialog() as dialog, ui.card().style(f"background-color: #1c2128; border: 1px solid {BORDER};"):
+            ui.label("删除全部对话？").classes("text-lg font-bold").style(f"color: {TEXT_PRIMARY};")
+            ui.label(f"将永久删除全部 {len(self.sessions)} 个对话，此操作不可撤销。").classes("text-sm").style(
+                f"color: {TEXT_SECONDARY};"
+            )
+            with ui.row().classes("w-full justify-end gap-2 mt-3"):
+                ui.button("取消", on_click=dialog.close).props("flat").style(f"color: {TEXT_SECONDARY};")
+
+                async def do_delete_all():
+                    await self._do_delete_all(dialog)
+
+                ui.button(
+                    "全部删除",
+                    on_click=do_delete_all,
+                ).style("background-color: #da3633 !important; color: white;")
+        dialog.open()
+
+    async def _do_delete_all(self, dialog):
+        """逐个删除所有会话。"""
+        failed = 0
+        for session in list(self.sessions):
+            token = session.get("token", {}).get("access_token", "")
+            sid = session.get("session_id", "")
+            try:
+                await api_client.delete_session(sid, token)
+            except ApiError:
+                failed += 1
+
+        auth_state.clear_session()
+        dialog.close()
+        await self.load_sessions()
+
+        try:
+            if failed:
+                ui.notify(f"已删除大部分对话，{failed} 个失败", type="warning")
+            else:
+                ui.notify("已删除全部对话", type="positive")
+        except RuntimeError:
+            pass
+
+        if self.on_session_select:
+            await self.on_session_select()

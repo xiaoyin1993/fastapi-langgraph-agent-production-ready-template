@@ -1,14 +1,24 @@
 """所有模型的基类和公共导入。"""
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
-from sqlmodel import Field, SQLModel
+from sqlalchemy import DateTime, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
-class BaseModel(SQLModel):
-    """包含公共字段的基础模型。"""
+class Base(DeclarativeBase):
+    """SQLAlchemy 2.0 声明式基类。"""
 
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC),
-        sa_column_kwargs={"comment": "记录创建时间（UTC）"},
+    pass
+
+
+class BaseModel(Base):
+    """包含公共字段的抽象基础模型。"""
+
+    __abstract__ = True
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(UTC),
+        comment="记录创建时间（UTC）",
     )

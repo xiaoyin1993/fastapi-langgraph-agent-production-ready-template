@@ -8,6 +8,7 @@ class ChatInput:
         self.on_send = on_send
         self.input_field = None
         self.send_btn = None
+        self.stop_btn = None
         self._disabled = False
 
     def render(self):
@@ -26,11 +27,17 @@ class ChatInput:
                 .props("round dense")
                 .style(f"background-color: {ACCENT} !important; color: white;")
             )
+            self.stop_btn = (
+                ui.button(icon="stop", on_click=self._on_stop_click)
+                .props("round dense")
+                .style("background-color: #da3633 !important; color: white;")
+            )
+            self.stop_btn.set_visibility(False)
+
+        self._stop_callback = None
 
     async def _handle_enter(self, e):
         """Enter 发送，Shift+Enter 换行"""
-        # NiceGUI 的 keydown.enter.prevent 已经阻止默认行为
-        # 这里直接发送
         await self._send()
 
     async def _send(self):
@@ -42,6 +49,26 @@ class ChatInput:
         self.input_field.value = ""
         if self.on_send:
             await self.on_send(text)
+
+    def _on_stop_click(self):
+        if self._stop_callback:
+            self._stop_callback()
+
+    def show_stop(self, on_stop):
+        """流式生成中：隐藏发送按钮，显示停止按钮"""
+        self._stop_callback = on_stop
+        if self.send_btn:
+            self.send_btn.set_visibility(False)
+        if self.stop_btn:
+            self.stop_btn.set_visibility(True)
+
+    def show_send(self):
+        """流式结束：隐藏停止按钮，显示发送按钮"""
+        self._stop_callback = None
+        if self.stop_btn:
+            self.stop_btn.set_visibility(False)
+        if self.send_btn:
+            self.send_btn.set_visibility(True)
 
     def disable(self):
         self._disabled = True

@@ -1,5 +1,6 @@
 """这个文件包含应用的数据模式定义。"""
 
+from app.schemas.agent import AgentInfo, ServiceMetadata
 from app.schemas.auth import Token
 from app.schemas.chat import (
     ChatRequest,
@@ -10,6 +11,8 @@ from app.schemas.chat import (
 from app.schemas.graph import GraphState
 
 __all__ = [
+    "AgentInfo",
+    "ServiceMetadata",
     "Token",
     "ChatRequest",
     "ChatResponse",

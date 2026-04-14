@@ -30,6 +30,7 @@ from app.infrastructure.middleware import (
     LoggingContextMiddleware,
     MetricsMiddleware,
 )
+from app.core.graph.manager import agent_manager
 from app.services.database import database_service
 
 # 加载环境变量
@@ -54,7 +55,11 @@ async def lifespan(app: FastAPI):
     )
     # 创建数据表（仅在表不存在时才创建）
     await database_service.create_tables()
+    # 初始化 Agent 管理器（连接池、checkpointer、store、注册 Agent）
+    await agent_manager.initialize()
     yield
+    # 关闭 Agent 管理器连接池
+    await agent_manager.shutdown()
     logger.info("application_shutdown")
 
 

@@ -94,12 +94,28 @@ class ApiClient:
             )
             return await self._handle_response(resp)
 
+    # ==================== Agents ====================
+
+    async def list_agents(self, session_token: str) -> dict:
+        """获取可用 Agent 列表。"""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.get(
+                f"{self.base_url}/chatbot/agents",
+                headers=self._headers(session_token),
+            )
+            return await self._handle_response(resp)
+
     # ==================== Chat ====================
 
-    async def send_message(self, messages: list[dict], session_token: str) -> dict:
+    async def send_message(self, messages: list[dict], session_token: str, agent_id: str | None = None) -> dict:
+        """发送消息，可选指定 agent_id。"""
+        if agent_id:
+            url = f"{self.base_url}/chatbot/{agent_id}/chat"
+        else:
+            url = f"{self.base_url}/chatbot/chat"
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
             resp = await client.post(
-                f"{self.base_url}/chatbot/chat",
+                url,
                 json={"messages": messages},
                 headers=self._headers(session_token),
             )

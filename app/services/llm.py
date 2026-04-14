@@ -39,7 +39,7 @@ class LLMRegistry:
     """
 
     # 公共连接参数
-    _base_url = settings.OPENAI_API_BASE or None
+    _base_url = settings.OPENAI_BASE_URL or None
     _api_key = settings.OPENAI_API_KEY
 
     # 类级别变量，包含所有可用的 LLM 模型
