@@ -168,7 +168,7 @@ async def _on_send(text: str, message_list: MessageList, chat_input: ChatInput, 
                     full_content,
                     extensions=["fenced_code", "codehilite", "tables"],
                 )
-                message_list.update_assistant_message(bubble, html_content, streaming=True)
+                message_list.update_assistant_message(bubble, html_content, streaming=True, raw_md=full_content)
 
     def on_stop():
         """停止按钮：用 task.cancel() 即时取消流式。"""
@@ -229,7 +229,7 @@ async def _on_send(text: str, message_list: MessageList, chat_input: ChatInput, 
                 full_content,
                 extensions=["fenced_code", "codehilite", "tables"],
             )
-            message_list.finalize_assistant_message(bubble, html_content)
+            message_list.finalize_assistant_message(bubble, html_content, raw_md=full_content)
         else:
             message_list.add_assistant_message(
                 '<span style="color: #8b949e; font-style: italic;">已停止生成</span>'
@@ -241,7 +241,7 @@ async def _on_send(text: str, message_list: MessageList, chat_input: ChatInput, 
                 full_content,
                 extensions=["fenced_code", "codehilite", "tables"],
             )
-            message_list.finalize_assistant_message(bubble, html_content)
+            message_list.finalize_assistant_message(bubble, html_content, raw_md=full_content)
         elif not full_content and not bubble:
             message_list.add_assistant_message(
                 '<span style="color: #8b949e; font-style: italic;">未收到回复</span>'

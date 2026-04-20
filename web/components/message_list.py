@@ -1,6 +1,12 @@
+import base64
+import markdown as md
 from nicegui import ui
 
 from theme import ACCENT, TEXT_SECONDARY
+
+
+def _b64(text: str) -> str:
+    return base64.b64encode(text.encode()).decode()
 
 
 # 流式生成指示器的 CSS（只注入一次）
@@ -60,8 +66,59 @@ _STREAM_CSS = (
     "</style>"
 )
 
+_COPY_BTN_JS = """
+<script>
+window.__addCopyBtns = function() {
+    document.querySelectorAll('.assistant-bubble pre').forEach(function(pre) {
+        if (pre.querySelector('.code-copy-btn')) return;
+        var btn = document.createElement('button');
+        btn.className = 'code-copy-btn';
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg><span>复制</span>';
+        btn.onclick = function() {
+            var code = pre.querySelector('code');
+            var text = code ? code.textContent : pre.textContent;
+            navigator.clipboard.writeText(text).then(function() {
+                btn.classList.add('copied');
+                btn.querySelector('span').textContent = '已复制';
+                setTimeout(function() {
+                    btn.classList.remove('copied');
+                    btn.querySelector('span').textContent = '复制';
+                }, 1500);
+            });
+        };
+        pre.appendChild(btn);
+    });
+};
+window.__addMsgCopyBtns = function() {
+    document.querySelectorAll('.assistant-bubble, .user-bubble').forEach(function(bubble) {
+        var wrapper = bubble.closest('.msg-wrapper');
+        if (!wrapper || wrapper.querySelector('.msg-copy-btn')) return;
+        var btn = document.createElement('button');
+        btn.className = 'msg-copy-btn';
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+        btn.onclick = function(e) {
+            e.stopPropagation();
+            var raw = wrapper.getAttribute('data-raw');
+            var text;
+            if (raw) {
+                try { text = decodeURIComponent(escape(atob(raw))); } catch(ex) { text = atob(raw); }
+            } else {
+                text = bubble.textContent || bubble.innerText;
+            }
+            navigator.clipboard.writeText(text.trim()).then(function() {
+                btn.classList.add('copied');
+                setTimeout(function() { btn.classList.remove('copied'); }, 1500);
+            });
+        };
+        wrapper.appendChild(btn);
+    });
+};
+</script>
+"""
+
 def _ensure_css():
     ui.add_head_html(_STREAM_CSS)
+    ui.add_head_html(_COPY_BTN_JS)
 
 
 class MessageList:
@@ -99,17 +156,19 @@ class MessageList:
             self.container.clear()
 
     def _user_html(self, content: str) -> str:
+        raw = _b64(content)
         return (
-            f'<div style="display:flex;justify-content:flex-end;">'
+            f'<div class="msg-wrapper" style="display:flex;justify-content:flex-end;position:relative;" data-raw="{raw}">'
             f'<div class="user-bubble">{_escape(content)}</div>'
             f'</div>'
         )
 
     @staticmethod
-    def _assistant_html(content: str, streaming: bool = False) -> str:
+    def _assistant_html(content: str, streaming: bool = False, raw_md: str = "") -> str:
         cursor_cls = ' streaming-cursor' if streaming else ''
+        raw_attr = f' data-raw="{_b64(raw_md)}"' if raw_md else ''
         return (
-            f'<div style="display:flex;justify-content:flex-start;">'
+            f'<div class="msg-wrapper" style="display:flex;justify-content:flex-start;position:relative;"{raw_attr}>'
             f'<div class="assistant-bubble{cursor_cls}">{content}</div>'
             f'</div>'
         )
@@ -120,28 +179,29 @@ class MessageList:
         with self.container:
             ui.html(self._user_html(content)).style("width:100%;overflow:hidden;")
         self._scroll_to_bottom()
+        self._inject_copy_buttons()
 
-    def add_assistant_message(self, content: str = "", streaming: bool = False) -> ui.html:
+    def add_assistant_message(self, content: str = "", streaming: bool = False, raw_md: str = "") -> ui.html:
         """添加助手消息气泡，返回 html 元素以便流式更新"""
         if not self.container:
             return None
         with self.container:
-            bubble = ui.html(self._assistant_html(content, streaming=streaming)).style(
+            bubble = ui.html(self._assistant_html(content, streaming=streaming, raw_md=raw_md)).style(
                 "width:100%;overflow:hidden;"
             )
         self._scroll_to_bottom()
         return bubble
 
-    def update_assistant_message(self, bubble: ui.html, content: str, streaming: bool = False):
+    def update_assistant_message(self, bubble: ui.html, content: str, streaming: bool = False, raw_md: str = ""):
         """更新助手消息内容（用于流式）"""
         if bubble:
             try:
-                bubble.set_content(self._assistant_html(content, streaming=streaming))
+                bubble.set_content(self._assistant_html(content, streaming=streaming, raw_md=raw_md))
                 self._scroll_to_bottom()
             except RuntimeError:
                 pass
 
-    def finalize_assistant_message(self, bubble: ui.html, content: str):
+    def finalize_assistant_message(self, bubble: ui.html, content: str, raw_md: str = ""):
         """流式结束：移除光标，追加完成标记。"""
         if not bubble:
             return
@@ -155,8 +215,9 @@ class MessageList:
             '</div>'
         )
         try:
-            bubble.set_content(self._assistant_html(content, streaming=False) + done_mark)
+            bubble.set_content(self._assistant_html(content, streaming=False, raw_md=raw_md) + done_mark)
             self._scroll_to_bottom()
+            self._inject_copy_buttons()
         except RuntimeError:
             pass
 
@@ -180,8 +241,13 @@ class MessageList:
                 if role == "user":
                     ui.html(self._user_html(content)).style("width:100%;overflow:hidden;")
                 elif role == "assistant":
-                    ui.html(self._assistant_html(content)).style("width:100%;overflow:hidden;")
+                    html_content = md.markdown(
+                        content,
+                        extensions=["fenced_code", "codehilite", "tables"],
+                    )
+                    ui.html(self._assistant_html(html_content, raw_md=content)).style("width:100%;overflow:hidden;")
         self._force_scroll_to_bottom()
+        self._inject_copy_buttons()
 
     def show_typing(self) -> ui.html:
         """显示「思考中」指示器"""
@@ -239,6 +305,17 @@ class MessageList:
     def reset_auto_scroll(self):
         """发送新消息时重置并强制滚到底部。"""
         self._force_scroll_to_bottom()
+
+    def _inject_copy_buttons(self):
+        try:
+            ui.run_javascript(
+                "setTimeout(function(){ "
+                "if(window.__addCopyBtns) window.__addCopyBtns(); "
+                "if(window.__addMsgCopyBtns) window.__addMsgCopyBtns(); "
+                "}, 50);"
+            )
+        except RuntimeError:
+            pass
 
 
 def _escape(text: str) -> str:
